@@ -6,3 +6,4 @@ openai
 supabase
 spacy
 quantulum3
+word2number

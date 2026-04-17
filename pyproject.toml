@@ -13,6 +13,7 @@ dependencies = [
     "supabase>=2.0.0",
     "spacy",
     "quantulum3",
+    "word2number",
     "SpeechRecognition",
     "sounddevice"
 ]
