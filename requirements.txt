@@ -5,3 +5,4 @@ flask
 openai
 supabase
 spacy
+quantulum3
