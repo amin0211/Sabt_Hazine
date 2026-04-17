@@ -23,6 +23,10 @@
 # git remote add origin https://github.com/amin0211/Sabt_Hazine.git
 # git push -u origin main
 
+# git add .
+# git commit -m "update project"
+# git push
+
 # git remote add origin https://github.com/amin0211/Sabt_Hazine.git
 # git branch -M main
 # git push -u origin main

@@ -3,6 +3,7 @@ from datetime import date
 from services.voice_service import start_voice
 import asyncio
 from queue import Queue
+# from Hazineha import hazinaha_view
 
 
 def build_chat_ui(
@@ -116,6 +117,10 @@ def build_chat_ui(
         on_tap=lambda e: open_end(e),
         content=build_filter_button(f"تا: {end_date}", ft.Icons.DATE_RANGE)
     )
+    # tree_btn = ft.IconButton(
+    #     icon=ft.Icons.ACCOUNT_TREE,
+    #     on_click=lambda e: page.go("/hazinaha_view")   # یا push_route اگر route درست داری
+    # )
 
     def open_start(e):
         start_picker.open = True

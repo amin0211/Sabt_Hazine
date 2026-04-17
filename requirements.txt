@@ -4,6 +4,5 @@ python-dotenv
 flask
 openai
 supabase
-spacy
-quantulum3
-word2number
+flet-audio-recorder
+flet-permission-handler

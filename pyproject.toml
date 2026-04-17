@@ -1,5 +1,5 @@
 [project]
-name = "sabtehazine"
+name = "sabte_hazine"
 version = "1.0.0"
 description = "Expense tracking app"
 requires-python = ">=3.10"
@@ -11,9 +11,14 @@ dependencies = [
     "flask>=3.0.0",
     "openai>=2.0.0",
     "supabase>=2.0.0",
-    "spacy",
-    "quantulum3",
-    "word2number",
     "SpeechRecognition",
-    "sounddevice"
+    "sounddevice",
+    "flet-audio-recorder",
+    "flet-permission-handler"
 ]
+
+[tool.flet]
+permissions = ["microphone"]
+
+[tool.flet.android.permission]
+"android.permission.RECORD_AUDIO" = true
