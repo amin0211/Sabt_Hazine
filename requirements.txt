@@ -6,3 +6,6 @@ openai
 supabase
 flet-audio-recorder
 flet-permission-handler
+flet_charts
+SpeechRecognition
+gunicorn

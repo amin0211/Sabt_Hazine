@@ -2,7 +2,7 @@ import flet as ft
 from supabase import create_client
 from dotenv import load_dotenv
 import os
-
+from services.supabase_service import load_all_hazineha, load_leaf_hazineha
 # SUPABASE_URL = 
 # SUPABASE_KEY = 
 
@@ -33,12 +33,21 @@ def hazinaha_view(page: ft.Page):
     # page.scroll = "auto"
     
 #    page.data["tree_column"] = ft.Column()
+
+    # page.scroll = ft.ScrollMode.AUTO
     back_btn = ft.ElevatedButton(
         content=ft.Text("⬅ Back"),
         on_click=lambda e: page.go("/sabtehazine")
     )
     
-    page.data["tree_column"] = ft.Column(scroll=ft.ScrollMode.ALWAYS)
+    # page.data["tree_column"] = ft.Column(scroll=ft.ScrollMode.ALWAYS)
+    page.data["tree_column"] = ft.Column(
+        scroll=ft.ScrollMode.AUTO,
+        expand=True
+    )
+
+    tree = page.data["tree_column"]
+
     def attach_costs(nodes_dict, cost_map):
         for nid, total in cost_map.items():
             if nid in nodes_dict:
@@ -91,11 +100,15 @@ def hazinaha_view(page: ft.Page):
                 parent = nodes.get(parent_id)
                 if parent:
                     parent.children.append(node)
-    
-        # 👇 فقط اولین ریشه باز باشه
-        if root_nodes:
-            root_nodes[0].expanded = True
-
+            
+        # باز کردن خودکار سطح 1 و 2 و 3 در لود اولیه
+        for root in root_nodes:
+            root.expanded = True          # سطح 1
+            for child in root.children:
+                child.expanded = True     # سطح 2
+                # for grandchild in child.children:
+                #     grandchild.expanded = True   # سطح 3
+        
         return root_nodes, nodes
 
     def update_title(node_id, new_title):
@@ -107,11 +120,26 @@ def hazinaha_view(page: ft.Page):
         node.name = value
         update_title(node.id, value)
 
+    def delete_node(parent, child, e):
+        if parent:
+            if child.children:
+                print("اول زیرشاخه‌ها را حذف کن")
+                return
+
+            supabase.table("hazineha").delete().eq("id", child.id).execute()
+            load_all_hazineha.cache_clear()
+            load_leaf_hazineha.cache_clear()
+
+            parent.children.remove(child)
+            refresh_tree()
+            
     def insert_node(title, parent_id):
         res = supabase.table("hazineha").insert({
             "title": title,
             "id_parent": parent_id
         }).execute()
+        load_all_hazineha.cache_clear()
+        load_leaf_hazineha.cache_clear()
         return res.data[0]["id"]
 
     data = load_data_from_db()
@@ -265,8 +293,13 @@ def hazinaha_view(page: ft.Page):
         refresh_tree()
 
     def add_child_wrapper(node, e):
+        if not node.adding_child:
+            return
+
+        node.adding_child = False
         name = e.control.value.strip()
         if name:
+            print(f"1111 = {name}")
             new_id = insert_node(name, node.id)
             node.children.append(Node(new_id, name))
 
@@ -290,11 +323,6 @@ def hazinaha_view(page: ft.Page):
         node.costs.pop(idx)
         refresh_tree()
 
-    def delete_node(parent, child, e):
-        if parent:
-            parent.children.remove(child)
-            refresh_tree()
-
     def refresh_tree():
 
         tree = page.data["tree_column"]
@@ -314,18 +342,25 @@ def hazinaha_view(page: ft.Page):
     )
 
     
-    page.data["tree_column"] = ft.Column(scroll=ft.ScrollMode.ALWAYS)
+    # page.data["tree_column"] = ft.Column(scroll=ft.ScrollMode.ALWAYS)
 
-    tree = page.data["tree_column"]
+    # tree = page.data["tree_column"]
 
     refresh_tree()
 
     return ft.View(
         route="/hazinaha_view",
         controls=[
-            ft.Column([
-                back_btn,
-                tree
-            ])  
+            ft.Container(
+                content=ft.Column(
+                    [
+                        back_btn,
+                        tree
+                    ],
+                    spacing=10,
+                    scroll=ft.ScrollMode.AUTO
+                ),
+                expand=True
+            )
         ]
-    )
+    )   

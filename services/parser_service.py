@@ -3,6 +3,7 @@
 # from quantulum3 import parser as qparser
 # from word2number import w2n
 from services.openai_service import parse_expense_with_openai
+from services.supabase_service import insert_log
 
 # nlp = spacy.load("en_core_web_sm")
 
@@ -77,5 +78,17 @@ def parse_expense(text):
 #     data = parse_expense_english(text)
 #     if data["price"] is not None and data["title"] is not None:
 #         return data
+    # insert_log(text, "parse_expense")
+    if not text:
+        return {
+            "title": "",
+            "price": None,
+            "currency": None,
+            "date": None,
+            "category_id": None,
+            "category_title": None,
+            "matched": False,
+            "suggestions": []
+        }
 
     return parse_expense_with_openai(text)

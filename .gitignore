@@ -6,3 +6,4 @@ backup/
 *.zip
 *.pyc
 __pycache__/
+*.wav

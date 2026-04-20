@@ -11,6 +11,9 @@ def check_password(password, hashed):
 
 
 def normalize_date(date_str, text):
+    return date_str
+    
+    
     if date_str:
         return date_str
 

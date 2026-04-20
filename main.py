@@ -6,8 +6,7 @@
 # taskkill /f /im flutter.bat
 
 # rmdir /s /q build
-# flet clean
-# flet build apk 
+
 
 # taskkill /F /IM python.exe
 # python server.py
@@ -31,8 +30,8 @@
 # git branch -M main
 # git push -u origin main
 
-# adb uninstall com.flet.python
-# adb shell pm list packages | findstr amin
+# adb uninstall com.flet.sabte_hazine
+# adb shell pm list packages | findstr com.flet.sabte_hazine
 
 
 
@@ -51,6 +50,8 @@ from ui.login_view import login_view
 from ui.register_view import register_view
 from ui.main_view import main_view
 
+from Hazineha import hazinaha_view
+from ui.GanttChart_view import GanttChart_view
 
 APP_BG = "#F5F7FB"
 CARD = "#FFFFFF"
@@ -98,6 +99,9 @@ def main(page: ft.Page):
             view.route = "/main"
             page.views.append(apply_bg(view))
 
+        elif page.route == "/hazinaha_view":
+            page.views.append(hazinaha_view(page))
+
         elif page.route == "/sabtehazine":
             view = build_chat_ui(
                     page=page,
@@ -108,11 +112,13 @@ def main(page: ft.Page):
             view.route = "/sabtehazine"
             page.views.append(apply_bg(view))
 
+        elif page.route == "/GanttChart_view":
+            page.views.append(GanttChart_view(page, theme))
 
         else:
             page.views.append(
                 ft.View(
-                    route="/",
+                    route="/", 
                     controls=[ft.Text("404 Page")]
                 )
             )

@@ -14,7 +14,10 @@ dependencies = [
     "SpeechRecognition",
     "sounddevice",
     "flet-audio-recorder",
-    "flet-permission-handler"
+    "flet-permission-handler",
+    "flet_charts",
+    "SpeechRecognition",
+    "gunicorn"
 ]
 
 [tool.flet]

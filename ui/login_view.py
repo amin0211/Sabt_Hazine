@@ -13,11 +13,12 @@ def login_view(page: ft.Page):
         try:
             users = get_user_by_username(username.value)
 
-            if users:
-                user = users[0]
-                with open("user.json", "w") as f:
-                    json.dump(user, f)
-                page.go("/sabtehazine")
+            page.go("/sabtehazine")
+            # if users:
+            #     user = users[0]
+            #     with open("user.json", "w") as f:
+            #         json.dump(user, f)
+            #     page.go("/sabtehazine")
 
 
               
@@ -33,10 +34,10 @@ def login_view(page: ft.Page):
             #         page.snack_bar.open = True
             #         page.update()
 
-            else:
-                page.snack_bar = ft.SnackBar(ft.Text("User not found"))
-                page.snack_bar.open = True
-                page.update()
+            # else:
+            #     page.snack_bar = ft.SnackBar(ft.Text("User not found"))
+            #     page.snack_bar.open = True
+            #     page.update()
 
         except Exception as ex:
             page.snack_bar = ft.SnackBar(ft.Text(f"Error: {ex}"))
