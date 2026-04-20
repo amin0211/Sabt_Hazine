@@ -509,7 +509,7 @@ def build_chat_ui(
                 return
 
             await asyncio.sleep(0.1)
-    input_field.value = "MIC ERROR: پاسخی از سرور دریافت نشد"
+    # input_field.value = "MIC ERROR: پاسخی از سرور دریافت نشد"
     input_field.focus()
     page.update()
     

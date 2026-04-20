@@ -9,3 +9,4 @@ flet-permission-handler
 flet_charts
 SpeechRecognition
 gunicorn
+numpy
