@@ -1,56 +1,92 @@
 import flet as ft
-import json
-
-from services.supabase_service import get_user_by_username
-from services.utils import check_password
+from services.supabase_service import sign_in_user, get_profile
 
 
 def login_view(page: ft.Page):
-    username = ft.TextField(label="Username")
-    password = ft.TextField(label="Password", password=True)
+    email = ft.TextField(
+        label="Email",
+        width=320,
+        autofocus=True,
+    )
 
-    def login(e):
+    password = ft.TextField(
+        label="Password",
+        password=True,
+        can_reveal_password=True,
+        width=320,
+    )
+
+    status_text = ft.Text("", color=ft.Colors.RED_400)
+
+    def show_message(text, color=ft.Colors.RED_400):
+        status_text.value = text
+        status_text.color = color
+        page.update()
+
+    async def login_async(e):
         try:
-            users = get_user_by_username(username.value)
+            print("aa  ")
+            em = (email.value or "").strip().lower()
+            pwd = password.value or ""
 
+            print("aa 1 ")
+            if not em or not pwd:
+                show_message("Email and password are required.")
+                return
+
+            print("aa  2")
+            auth_res = sign_in_user(em, pwd)
+            user = auth_res.user
+            session = auth_res.session
+
+            print("aa  3")
+            if not user or not session:
+                show_message("Login failed.")
+                return
+
+            print("aa  4")
+            profile = get_profile(user.id)
+
+            print("aa  5")
+            await page.shared_preferences.set("access_token", session.access_token)
+            await page.shared_preferences.set("refresh_token", session.refresh_token)
+            await page.shared_preferences.set("user_id", user.id)
+            await page.shared_preferences.set("user_email", user.email or "")
+
+            print("aa  5")
+            if profile:
+                await page.shared_preferences.set("username", profile.get("username", ""))
+                await page.shared_preferences.set("name", profile.get("name", ""))
+                await page.shared_preferences.set("family", profile.get("family", ""))
+
+            print("aa  6")
+            show_message("Login successful.", ft.Colors.GREEN_400)
+            print("aa  7")
             page.go("/sabtehazine")
-            # if users:
-            #     user = users[0]
-            #     with open("user.json", "w") as f:
-            #         json.dump(user, f)
-            #     page.go("/sabtehazine")
-
-
-              
-
-            #     # اگر خواستی پسورد هم چک شود این قسمت فعال بماند
-            #     if check_password(password.value, user["password_hash"]):
-            #         with open("user.json", "w") as f:
-            #             json.dump(user, f)
-
-            #         page.go("/sabtehazine")
-            #     else:
-            #         page.snack_bar = ft.SnackBar(ft.Text("Wrong password"))
-            #         page.snack_bar.open = True
-            #         page.update()
-
-            # else:
-            #     page.snack_bar = ft.SnackBar(ft.Text("User not found"))
-            #     page.snack_bar.open = True
-            #     page.update()
+            print("aa  8")
 
         except Exception as ex:
-            page.snack_bar = ft.SnackBar(ft.Text(f"Error: {ex}"))
-            page.snack_bar.open = True
-            page.update()
+            print(f"111 = {ex}")
+            show_message(f"Error: {ex}")
+
+    def login(e):
+        page.run_task(login_async, e)
+
+    password.on_submit = login
 
     return ft.View(
         route="/login",
         controls=[
-            ft.Text("Login", size=25),
-            username,
+            ft.Container(height=30),
+            ft.Text("Login", size=28, weight=ft.FontWeight.BOLD),
+            ft.Container(height=10),
+            email,
             password,
-            ft.ElevatedButton("Login", on_click=login),
+            ft.Container(height=10),
+            status_text,
+            ft.Container(height=10),
+            ft.ElevatedButton("Login", on_click=login, width=320),
             ft.TextButton("Register", on_click=lambda e: page.go("/register")),
         ],
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )

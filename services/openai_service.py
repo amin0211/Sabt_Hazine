@@ -1,274 +1,216 @@
-from functools import lru_cache
-from openai import OpenAI
 import os
 import json
-from flask import Flask, request, jsonify
-from services.supabase_service import insert_log, load_leaf_hazineha
+from openai import OpenAI
+from services.supabase_service import get_members
+from datetime import datetime
 
-app = Flask(__name__)
 
 api_key = os.getenv("OPENAI_API_KEY")
-
-if api_key:
-    client = OpenAI(api_key=api_key)
-else:
-    client = None
+client = OpenAI(api_key=api_key) if api_key else None
 
 
-def normalize_price_sign(text, price):
-    if price is None:
-        return None
+def is_openai_available():
+    return client is not None
 
-    try:
-        price = float(price)
-    except:
-        return None
-
-    text = (text or "").strip().lower()
-
-    negative_keywords = [
-        "پس دادم",
-        "پس داد",
-        "برگردوندم",
-        "برگردونده شد",
-        "مرجوع کردم",
-        "مرجوع",
-        "refund",
-        "returned",
-        "return",
-        "cashback",
-    ]
-
-    if any(k in text for k in negative_keywords):
-        return -abs(price)
-
-    return abs(price)
-
-
-def normalize_output(data, text):
-    return {
-        "title": data.get("category_title") or data.get("title") or text,
-        "price": data.get("price"),
-        "currency": data.get("currency"),
-        "date": data.get("date"),
-        "category_id": data.get("category_id"),
-        "category_title": data.get("category_title"),
-        "matched": bool(data.get("matched", False)),
-        "suggestions": data.get("suggestions", []),
-    }
-
-
-def shortlist_categories(text, categories, limit=40):
-    text_l = (text or "").lower().strip()
-    if not text_l:
-        return categories[:limit]
-
-    keywords = text_l.split()
-    scored = []
-
-    for cat in categories:
-        title_l = cat["title"].lower()
-        score = 0
-
-        for kw in keywords:
-            if kw and kw in title_l:
-                score += 3
-
-        if score > 0:
-            scored.append((score, cat))
-
-    if scored:
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [cat for _, cat in scored[:limit]]
-
-    return categories[:limit]
 
 def safe_json_load(text):
     try:
         return json.loads(text)
-    except:
+    except Exception:
+        return None
+
+
+def get_embedding(text: str):
+    try:
+        if client is None:
+            return None
+        if not text:
+            return None
+
+        now = datetime.now()
+        print("ssssssss 311 = ")
+        print(now.strftime("%H:%M:%S.%f")[:-3])
+
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
+        )
+
+        now = datetime.now()
+        print("ssssssss 312 = ")
+        print(now.strftime("%H:%M:%S.%f")[:-3])
+
+        return response.data[0].embedding
+
+    except Exception as e:
+        print("get_embedding error:", e)
+        return None
+    
+
+_MEMBERS_CACHE = {
+    "names": None,
+    "time": 0,
+}
+
+def get_member_names_cached(ttl=60):
+    import time
+
+    now = time.time()
+
+    if _MEMBERS_CACHE["names"] is not None and now - _MEMBERS_CACHE["time"] < ttl:
+        return _MEMBERS_CACHE["names"]
+
+    members = get_members()
+    names = [m["full_name"] for m in members]
+
+    _MEMBERS_CACHE["names"] = names
+    _MEMBERS_CACHE["time"] = now
+
+    return names
+
+
+def extract_expense_fields_with_openai(text):
+    if client is None:
+        return None
+
+    now = datetime.now()
+    print("qqq = ")
+    print(now.strftime("%H:%M:%S.%f")[:-3])
+
+    member_name = get_member_names_cached()
+
+    system_prompt = f"""
+Return ONLY valid JSON with keys:
+title, price, currency, date, member_name.
+
+Rules:
+- title: short clean expense title only.
+- price: numeric amount or null.
+- currency: currency word or null.
+- date: YYYY-MM-DD or null. Never guess.
+- member_name: explicitly mentioned person/entity or null.
+- If "خودم" return "self".
+- If similar to known list, return exact known name.
+
+Known names/entities:
+{member_name}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=120,
+        )
+
+        now = datetime.now()
+        print("www = ")
+        print(now.strftime("%H:%M:%S.%f")[:-3])
+        raw = response.choices[0].message.content
+        return safe_json_load(raw)
+
+    except Exception as ex:
+        print("OPENAI EXTRACT ERROR:", type(ex).__name__, ex)
         return None
 
 
 
 
-@lru_cache(maxsize=512)
-def parse_expense_with_openai(text):
-    # insert_log(text, "parse_expense_with_openai 1")
-
-    fallback = {
-        "title": text,
-        "price": None,
-        "currency": None,
-        "date": None,
-        "category_id": None,
-        "category_title": None,
-        "matched": False,
-        "suggestions": []
-    }
-
-    if client is None:
-        return fallback   
-    try:
-        categories = load_leaf_hazineha()
-        # print(f"categories = {categories}")
-        
-        shortlisted = shortlist_categories(text, categories, limit=40)
-        # print(f"shortlisted = {shortlisted}")
-
-        categories_json = json.dumps(shortlisted, ensure_ascii=False)
-        # print(f"categories_json = {categories_json}")
-
-        response = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-Return ONLY valid JSON.
-
-Keys:
-- title (string)
-- price (number or null)
-- currency (string or null)
-- date (YYYY-MM-DD or null)
-- category_id (number or null)
-- category_title (string or null)
-- matched (boolean)
-- suggestions (array)
-
-Rules:
-- Extract expense title from the text.
-- Extract numeric amount if present.
-- If the text contains Persian money words like "تومن", "تومان", "ریال", set currency properly.
-- If no price exists, return null for price.
-- If no date exists, return null for date.
-- NEVER guess missing values.
-
-- If the text indicates refund or money returned
-  (e.g. "پس دادم", "برگردوندم", "مرجوع کردم", "refund", "returned"),
-  the price MUST be negative.
-
-Category matching rules:
-- You MUST choose category only from the provided categories.
-- If there is a confident match:
-  matched = true
-  category_id = chosen category id
-  category_title = chosen category title
-  suggestions = []
-
-- If there is NOT a confident match:
-  matched = false
-  category_id = null
-  category_title = null
-  suggestions = up to 3 closest categories from the provided list
-
-- Never invent a category.
-- suggestions must be an array of objects like:
-  {"category_id": 123, "category_title": "..."}
-
-Do NOT include markdown or explanation.
-"""
-                },
-                {
-                    "role": "user",
-                    "content": f"""Text:
-                    {text}
-
-                    Available categories:
-                    {categories_json}
-                    """
-                }
-            ],
-            response_format={"type": "json_object"},
-            max_completion_tokens=400,
-            reasoning_effort="minimal",
-        )
-
-        # insert_log(text, "parse_expense_with_openai 2")
-    
-        raw = response.choices[0].message.content
-
-        # insert_log(raw, "parse_expense_with_openai 3")
-    
-
-        data = safe_json_load(raw)
-        # insert_log(data.get("price"), "parse_expense_with_openai 4")  
-        if not data:
-            return fallback
-
-
-        data["price"] = normalize_price_sign(text, data.get("price"))
-
-        valid_ids = {c["id"] for c in shortlisted}
-        valid_map = {c["id"]: c["title"] for c in shortlisted}
-        # print(f"111 = {valid_ids}")
-        # print(f"222 = {valid_map}")
-        # print(f"333 = {data.get("category_id")}")
-        
-        category_id = data.get("category_id")
-        if category_id not in valid_ids:
-            # print(f"666 = ")
-            data["category_id"] = None
-            data["category_title"] = None
-            data["matched"] = False
-        else:
-            data["category_title"] = valid_map.get(category_id)
-            # print(f"777 = {valid_map.get(category_id)}")
-        
-        suggestions = data.get("suggestions", [])
-        
-        # print(f"555 = {suggestions}")
-
-        cleaned_suggestions = []
-
-        if isinstance(suggestions, list):
-            for item in suggestions[:3]:
-                if not isinstance(item, dict):
-                    continue
-                sid = item.get("category_id")
-                if sid in valid_ids:
-                    cleaned_suggestions.append({
-                        "category_id": sid,
-                        "category_title": valid_map[sid]
-                    })
-
-        data["suggestions"] = cleaned_suggestions
-
-        # print(f"444 = {suggestions}")
-        # print(f"555a = {categories}")
-        return normalize_output(data, text)
-    
-    except Exception as e:
-        print("OpenAI error:", e)
-
-        return fallback
-    
+# def extract_expense_fields_with_openai(text):
+#     if client is None:
+#         return None
 
     
-# ---------------- ROUTE ----------------
-@app.route("/parse", methods=["POST"])
-def parse_route():
-    try:
-        data = request.get_json()
-        text = data.get("text", "")
+#     now = datetime.now()
+#     print("qqq = ")
+#     print(now.strftime("%H:%M:%S.%f")[:-3])
 
-        result = parse_expense_with_openai(text)
+#     members = get_members()
+#     member_name = [m["full_name"] for m in members]
+#     try:
+#         response = client.chat.completions.create(
+#             model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
+#             messages = [
+#                 {
+#                     "role": "system",
+#                     "content": f"""
+#             Return ONLY valid JSON.
 
-        return jsonify(result)
+#             Keys:
+#             - title (string)
+#             - price (number or null)
+#             - currency (string or null)
+#             - date (YYYY-MM-DD or null)
+#             - member_name (string or null)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+#             Rules:
+#             - Extract the expense title only.
+#             - The title must be short and clean.
+#             - Remove filler words and unrelated sentence parts.
 
-# ---------------- HOME TEST ----------------
-@app.route("/")
-def home():
-    return "🚀 Server is running"
+#             Examples:
+#             "من رفتم بازار و تخته پاک کن 20 دلار خریدم" -> "تخته پاک کن"
+#             "دیروز برای مدرسه ماژیک وایت برد 50 خریدم" -> "ماژیک وایت برد"
 
-# ---------------- RUN ----------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+#             Price rules:
+#             - Extract numeric amount if present.
+#             - If no price exists, return null.
 
-#print("🔥 SERVER IS STARTING...")
+#             Date rules:
+#             - If a date exists, convert it to YYYY-MM-DD.
+#             - If no date exists, return null.
+#             - NEVER guess missing values.
 
+#             Member/entity rules:
+#             - Extract the related person or entity ONLY if explicitly mentioned.
+#             - This can be a family member, a person, a company, an organization, a customer, or any named party.
+#             - Examples:
+#             "برای مامان" -> "مامان"
+#             "برای آقای حسینی" -> "آقای حسینی"
+#             "برای شرکت ساختمانی" -> "شرکت ساختمانی"
+#             "مال علی" -> "علی"
+#             "واسه شرکت پارس" -> "شرکت پارس"
+
+#             - Do NOT guess.
+#             - If no related person/entity is explicitly mentioned, return null.
+#             - If "خودم" or "برای خودم" is mentioned, return "self".
+
+#             Known names/entities list:
+#             {member_name}
+
+#             - If the text contains a name similar to one of the known names/entities, return the exact name from the list.
+#             - Otherwise return the extracted name as-is.
+
+#             Strict output:
+#             - Return ONLY JSON.
+#             - No explanation.
+#             - No markdown.
+#             """
+#                 },
+#                 {
+#                     "role": "user",
+#                     "content": text
+#                 }
+#             ],
+#             response_format={"type": "json_object"},
+#             max_completion_tokens=300,
+#             reasoning_effort="minimal",
+#         )
+
+#         now = datetime.now()
+#         print("www = ")
+#         print(now.strftime("%H:%M:%S.%f")[:-3])
+#         raw = response.choices[0].message.content
+
+#         return safe_json_load(raw)
+
+#     except Exception as e:
+#         print("extract_expense_fields_with_openai error:", e)
+#         return None
+    
+    
+    

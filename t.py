@@ -11,7 +11,6 @@ from services.supabase_service import upsert_category_learning, update_category_
 from services.openai_service import get_embedding
 from services.parser_service import normalize_text
 from services.i18n import t
-from datetime import datetime
 
 
 
@@ -298,11 +297,9 @@ def build_chat_ui(
             else:
                 safe_page_update(page)
 
-
                 parsed = await asyncio.to_thread(parse_expense_, text)
                 parsed["text"] = text
                 
-
                 async def continue_after_choice(final_parsed):
                     new_row = await asyncio.to_thread(controller.save_new, final_parsed)
                     remove_empty_state()
@@ -312,7 +309,6 @@ def build_chat_ui(
                     await input_field.focus()
                     safe_page_update(page)
 
-
                 if not parsed.get("matched") and parsed.get("suggestions"):
                     ask_user_to_choose_category(
                             page,
@@ -320,9 +316,9 @@ def build_chat_ui(
                             lambda final_parsed: page.run_task(continue_after_choice, final_parsed)
                         )
                 else:
+                    
                     await continue_after_choice(parsed)                
-
-
+                
                 page.update()
 
                 # new_row = await asyncio.to_thread(controller.save_new, text)
@@ -354,7 +350,7 @@ def build_chat_ui(
         border_color="transparent",
         bgcolor=CARD,
         text_size=14,
-        content_padding=ft.padding.only(left=28, right=12, top=12, bottom=12),
+        content_padding=ft.padding.symmetric(horizontal=16, vertical=14),
         cursor_color=PRIMARY,
         on_submit=send_message,
     )
@@ -467,11 +463,11 @@ def build_chat_ui(
         ),
         padding=ft.padding.only(left=12, top=14, right=12, bottom=12),
         border_radius=ft.border_radius.only(bottom_left=22, bottom_right=22),
-        # shadow=ft.BoxShadow(
-        #     blur_radius=12,
-        #     color="#12000000",
-        #     offset=ft.Offset(0, 3),
-        # ),
+        shadow=ft.BoxShadow(
+            blur_radius=12,
+            color="#12000000",
+            offset=ft.Offset(0, 3),
+        ),
         content=ft.Column(
             [
                 # ردیف اول: انتخاب تاریخ
@@ -589,11 +585,11 @@ def build_chat_ui(
             border_radius=16,
             bgcolor="#FEF2F2" if is_invalid else "#FFFFFF",
             border=ft.border.all(1, "#FCA5A5" if is_invalid else "#E5E7EB"),
-            # shadow=ft.BoxShadow(
-            #     blur_radius=8,
-            #     color="#0A000000",
-            #     offset=ft.Offset(0, 2),
-            # ),
+            shadow=ft.BoxShadow(
+                blur_radius=8,
+                color="#0A000000",
+                offset=ft.Offset(0, 2),
+            ),
             content=ft.Row(
                 [
                     ft.Container(
@@ -669,28 +665,7 @@ def build_chat_ui(
         container.data = row["id"]
         return container
 
-
-    async def load_messages_async():
-        await asyncio.sleep(0.05)
-
-        res = await asyncio.to_thread(
-            supabase_service.load_my_costs_by_date,
-            start_date.isoformat(),
-            end_date.isoformat()
-        )
-
-        chat_column.controls.clear()
-
-        if not res:
-            chat_column.controls.append(build_empty_state())
-        else:
-            for row in res:
-                chat_column.controls.append(create_message(row))
-
-        safe_page_update(page)
-
-
-    # def load_messages():
+    def load_messages():
         res = supabase_service.load_my_costs_by_date(
             start_date.isoformat(),
             end_date.isoformat()
@@ -766,7 +741,7 @@ def build_chat_ui(
 
     # input_field.value = "MIC ERROR: پاسخی از سرور دریافت نشد"
     # input_field.focus()
-    # page.update()
+    page.update()
     
     page.data = page.data or {}
     page.data["is_recording"] = False
@@ -777,32 +752,32 @@ def build_chat_ui(
 
     def build_send_button():
         return ft.Container(
-            width=36,
-            height=36,
-            border_radius=11,
-            bgcolor="#F3F4F6",
+            width=42,
+            height=42,
+            border_radius=21,
+            bgcolor="#E5E7EB" if not send_state["loading"] else "#D1D5DB",
             alignment=ft.Alignment.CENTER,
             ink=True,
-            on_click=send_message,
-            content=ft.Icon(ft.Icons.ARROW_UPWARD_ROUNDED, size=16, color=PRIMARY),
+            on_click=None if send_state["loading"] else send_message,
+            content=(
+                ft.ProgressRing(width=18, height=18, stroke_width=2, color=PRIMARY)
+                if send_state["loading"]
+                else ft.Icon(ft.Icons.ARROW_UPWARD_ROUNDED, size=18, color=PRIMARY)
+            ),
         )
-
-
 
     send_btn_ui = build_send_button()
 
-    mic_icon = ft.Icon(ft.Icons.MIC_ROUNDED, color=PRIMARY, size=16)
+    mic_icon = ft.Icon(ft.Icons.MIC_ROUNDED, color=PRIMARY, size=20)
 
     mic_button_box = ft.Container(
-        width=36,
-        height=36,
-        border_radius=11,
+        width=48,
+        height=48,
+        border_radius=16,
         bgcolor="#EEF2FF",
         alignment=ft.Alignment.CENTER,
         content=mic_icon,
     )
-
-
 
     mic_button = ft.GestureDetector(
         on_pan_start=on_mic_press,
@@ -812,6 +787,18 @@ def build_chat_ui(
     )
 
 
+    def build_send_button():
+        return ft.Container(
+            width=42,
+            height=42,
+            border_radius=21,
+            bgcolor="#F3F4F6",
+            alignment=ft.Alignment.CENTER,
+            ink=True,
+            on_click=send_message,
+            content=ft.Icon(ft.Icons.ARROW_UPWARD_ROUNDED, size=18, color=PRIMARY),
+        )
+
     send_btn_ui = build_send_button()
 
     recording_pulse = {
@@ -820,9 +807,9 @@ def build_chat_ui(
     }
 
     recording_dot = ft.Container(
-        width=8,
-        height=8,
-        border_radius=10,
+        width=10,
+        height=10,
+        border_radius=20,
         bgcolor="#DC2626",
         opacity=0,
         animate_opacity=300,
@@ -869,34 +856,25 @@ def build_chat_ui(
                     bgcolor=input_bg,
                     border_radius=22,
                     border=ft.border.all(1, border_color),
-                    padding=ft.padding.only(left=4, right=4, top=5, bottom=5),
+                    padding=ft.padding.only(left=12, right=6, top=6, bottom=6),
 
                     content=ft.Row(
                         [   
                             ft.Container(
-                                expand=True,
-                                content=ft.Stack(
-                                    [
-                                        input_field,
+                                width=24,
+                                alignment=ft.Alignment.CENTER,
+                                content=recording_dot,
+                            ),
 
-                                        ft.Container(
-                                            left=8,
-                                            top=0,
-                                            bottom=0,
-                                            alignment=ft.Alignment.CENTER_LEFT,
-                                            content=recording_dot,
-                                        ),
-                                    ],
-                                    expand=True,
-                                ),
+                            ft.Container(
+                                expand=True,
+                                content=input_field,
                             ),
 
                             send_btn_ui,
 
                             mic_button,
                         ],
-                        spacing=2,
-                        tight=True,
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
@@ -905,49 +883,7 @@ def build_chat_ui(
         ),
     )
     
-    page.run_task(load_messages_async)
-    # load_messages()
-
-    if isinstance(page.data, dict) and page.data.get("reopen_edit_cost_dialog"):
-        page.data["reopen_edit_cost_dialog"] = False
-
-        edit_row = page.data.get("edit_cost_row")
-
-        if edit_row:
-            def reopen_on_save(updated_data):
-                old_category_id = edit_row.get("id_hazine")
-                new_category_id = updated_data.get("id_hazine")
-
-                updated_row = controller.edit_cost(edit_row["id"], updated_data)
-
-                if new_category_id and new_category_id != old_category_id:
-                    raw_text = edit_row.get("temp_hazine") or edit_row.get("title", "")
-                    normalized_text = normalize_text(raw_text)
-
-                    learning_row = upsert_category_learning(
-                        raw_text=raw_text,
-                        normalized_text=normalized_text,
-                        category_id=new_category_id,
-                        source="user_corrected",
-                        embedding_text=normalized_text,
-                    )
-
-                    if learning_row:
-                        embedding_vector = get_embedding(normalized_text)
-
-                        if embedding_vector:
-                            update_category_learning_embedding(
-                                learning_row["id"],
-                                embedding_vector,
-                            )
-
-                update_ui(edit_row["id"], updated_row)
-
-            open_edit_cost_dialog(
-                page=page,
-                row=edit_row,
-                on_save=reopen_on_save,
-            )
+    load_messages()
 
     return ft.View(
         route="/sabtehazine",

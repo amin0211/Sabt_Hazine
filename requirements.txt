@@ -1,12 +1,9 @@
-flet
-requests
 python-dotenv
 flask
 openai
 supabase
-flet-audio-recorder
-flet-permission-handler
-flet_charts
-SpeechRecognition
 gunicorn
-numpy
+flet-charts==0.84.0
+flet==0.84.0
+requests
+flet-stt

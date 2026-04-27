@@ -1,8 +1,10 @@
 import flet as ft
 import flet_charts as fch
 from datetime import date, timedelta
-from services.supabase_service import load_all_hazineha, load_all_costs
+from services.i18n import t
 
+from services.supabase_service import load_all_hazineha, load_my_costs_by_date
+import traceback
 
 class Node:
     def __init__(self, id, title, parent_id):
@@ -49,8 +51,9 @@ def GanttChart_view(page: ft.Page, theme):
         "#F97316",
     ]
 
-    start_picker = ft.DatePicker()
-    end_picker = ft.DatePicker()
+    start_picker = ft.DatePicker(value=start_date)
+    end_picker = ft.DatePicker(value=end_date)
+    
     page.overlay.append(start_picker)
     page.overlay.append(end_picker)
 
@@ -85,12 +88,12 @@ def GanttChart_view(page: ft.Page, theme):
 
     start_btn = ft.GestureDetector(
         on_tap=open_start,
-        content=build_filter_button(f"از: {start_date}", ft.Icons.CALENDAR_MONTH),
+        content=build_filter_button(f"{t(page, "date_from")}: {start_date}", ft.Icons.CALENDAR_MONTH),
     )
 
     end_btn = ft.GestureDetector(
         on_tap=open_end,
-        content=build_filter_button(f"تا: {end_date}", ft.Icons.DATE_RANGE),
+        content=build_filter_button(f"{t(page, "date_to")}: {end_date}", ft.Icons.DATE_RANGE),
     )
 
     def go_up(e=None):
@@ -223,36 +226,26 @@ def GanttChart_view(page: ft.Page, theme):
             current = nodes.get(current.parent_id)
 
     def get_children_report(parent_id=None):
+
         all_hazineha = load_all_hazineha()
 
-        try:
-            all_costs = load_all_costs(
-                start_date.isoformat(),
-                end_date.isoformat()
-            )
-        except TypeError:
-            all_costs = load_all_costs()
+        all_costs = load_my_costs_by_date(
+            start_date.isoformat(),
+            end_date.isoformat()
+        )
 
         roots, nodes = build_tree(all_hazineha)
 
         for row in all_costs:
-            row_date = row.get("date_cost") or row.get("date")
-            if row_date:
-                try:
-                    row_date_obj = date.fromisoformat(str(row_date)[:10])
-                    if row_date_obj < start_date or row_date_obj > end_date:
-                        continue
-                except Exception:
-                    pass
-
             hazine_id = row.get("id_hazine")
             price = row.get("price", 0) or 0
+
             if hazine_id in nodes:
                 add_to_ancestors(hazine_id, price, nodes)
+            else:
+                print("WARNING: id_hazine not found in nodes ->", hazine_id)
 
         if parent_id is None:
-            # اگر فقط یک ریشه‌ی نمایشی مثل "طبقه بندی هزینه ها" داری،
-            # از فرزندان آن شروع کن، نه از خودش
             if len(roots) == 1:
                 target_nodes = roots[0].children
             else:
@@ -276,6 +269,7 @@ def GanttChart_view(page: ft.Page, theme):
                 )
 
         return result, nodes
+
 
     def handle_item_click(item_index, data):
         if item_index is None:
@@ -412,7 +406,7 @@ def GanttChart_view(page: ft.Page, theme):
         content=ft.Row(
             [
                 ft.Icon(ft.Icons.PIE_CHART_OUTLINE_ROUNDED, size=16),
-                ft.Text("دایره‌ای", weight=ft.FontWeight.W_600),
+                ft.Text(t(page, "GantChart_pie"), weight=ft.FontWeight.W_600),
             ],
             spacing=6,
             tight=True,
@@ -424,7 +418,7 @@ def GanttChart_view(page: ft.Page, theme):
         content=ft.Row(
             [
                 ft.Icon(ft.Icons.BAR_CHART_ROUNDED, size=16),
-                ft.Text("ستونی", weight=ft.FontWeight.W_600),
+                ft.Text(t(page, "GantChart_Bar"), weight=ft.FontWeight.W_600),
             ],
             spacing=6,
             tight=True,
@@ -464,7 +458,7 @@ def GanttChart_view(page: ft.Page, theme):
         if start_picker.value:
             start_date = start_picker.value.date()
             start_btn.content = build_filter_button(
-                f"از: {start_date}",
+                f"{t(page, "date_from")}: {start_date}",
                 ft.Icons.CALENDAR_MONTH,
             )
             start_btn.update()
@@ -478,7 +472,7 @@ def GanttChart_view(page: ft.Page, theme):
         if end_picker.value:
             end_date = end_picker.value.date()
             end_btn.content = build_filter_button(
-                f"تا: {end_date}",
+                f"{t(page, "date_to")}: {end_date}",
                 ft.Icons.DATE_RANGE,
             )
             end_btn.update()
@@ -493,13 +487,104 @@ def GanttChart_view(page: ft.Page, theme):
     update_chart_switcher()
 
     def render_chart():
-        data, nodes = get_children_report(current_parent_id["value"])
-        breadcrumb_text.value = build_breadcrumb(current_parent_id["value"], nodes)
-        level_back_btn.visible = len(path_stack) > 0
+        try:
 
-        details_column.controls.clear()
+            data, nodes = get_children_report(current_parent_id["value"])
 
-        if not data:
+            breadcrumb_text.value = build_breadcrumb(current_parent_id["value"], nodes)
+            level_back_btn.visible = len(path_stack) > 0
+
+            details_column.controls.clear()
+
+            if not data:
+                chart_body.controls = [
+                    
+                    ft.Container(
+                        bgcolor=soft_bg,
+                        border_radius=12,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                        content=ft.Row(
+                            [
+                                ft.Icon(
+                                    ft.Icons.ACCOUNT_TREE_OUTLINED,
+                                    size=16,
+                                    color=text_secondary,
+                                ),
+                                breadcrumb_text,
+                                ft.Container(expand=True),
+                                level_back_btn,
+                            ],
+                            spacing=8,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    ),
+                    ft.Container(
+                        expand=True,
+                        alignment=ft.Alignment(0, 0),
+                        content=ft.Column(
+                            [
+                                ft.Icon(
+                                    ft.Icons.INSERT_CHART_OUTLINED,
+                                    size=42,
+                                    color="#9CA3AF",
+                                ),
+                                ft.Text(
+                                    t(page, "GantChart_Empty"),
+                                    color=text_secondary,
+                                ),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=10,
+                        ),
+                    ),
+                ]
+                page.update()
+                return
+
+            for i, item in enumerate(data):
+                details_column.controls.append(
+                    ft.Container(
+                        padding=14,
+                        border_radius=16,
+                        bgcolor=soft_bg,
+                        border=ft.border.all(1, "#EAEFF5"),
+                        content=ft.Row(
+                            [
+                                ft.Container(
+                                    width=10,
+                                    height=10,
+                                    border_radius=999,
+                                    bgcolor=CHART_COLORS[i % len(CHART_COLORS)],
+                                ),
+                                ft.Text(
+                                    item["title"],
+                                    expand=True,
+                                    color=text_primary,
+                                    size=13,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                                ft.Container(
+                                    bgcolor=card_bg,
+                                    border_radius=10,
+                                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                                    content=ft.Text(
+                                        f"{item['value']:.0f}",
+                                        weight=ft.FontWeight.W_700,
+                                        color=text_primary,
+                                    ),
+                                ),
+                            ],
+                            spacing=10,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    )
+                )
+
+            if current_chart_type["value"] == "pie":
+                chart_widget = build_pie_chart(data)
+            else:
+                chart_widget = build_bar_chart(data)
+
             chart_body.controls = [
                 ft.Container(
                     bgcolor=soft_bg,
@@ -523,101 +608,16 @@ def GanttChart_view(page: ft.Page, theme):
                 ft.Container(
                     expand=True,
                     alignment=ft.Alignment(0, 0),
-                    content=ft.Column(
-                        [
-                            ft.Icon(
-                                ft.Icons.INSERT_CHART_OUTLINED,
-                                size=42,
-                                color="#9CA3AF",
-                            ),
-                            ft.Text(
-                                "داده‌ای برای نمایش وجود ندارد",
-                                color=text_secondary,
-                            ),
-                        ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=10,
-                    ),
+                    content=chart_widget,
                 ),
             ]
+
             page.update()
-            return
 
-        for i, item in enumerate(data):
-            details_column.controls.append(
-                ft.Container(
-                    padding=14,
-                    border_radius=16,
-                    bgcolor=soft_bg,
-                    border=ft.border.all(1, "#EAEFF5"),
-                    content=ft.Row(
-                        [
-                            ft.Container(
-                                width=10,
-                                height=10,
-                                border_radius=999,
-                                bgcolor=CHART_COLORS[i % len(CHART_COLORS)],
-                            ),
-                            ft.Text(
-                                item["title"],
-                                expand=True,
-                                color=text_primary,
-                                size=13,
-                                weight=ft.FontWeight.W_600,
-                            ),
-                            ft.Container(
-                                bgcolor=card_bg,
-                                border_radius=10,
-                                padding=ft.padding.symmetric(
-                                    horizontal=10,
-                                    vertical=6,
-                                ),
-                                content=ft.Text(
-                                    f"{item['value']:.0f}",
-                                    weight=ft.FontWeight.W_700,
-                                    color=text_primary,
-                                ),
-                            ),
-                        ],
-                        spacing=10,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                )
-            )
+        except Exception as ex:
+            traceback.print_exc()
+            page.update()
 
-        if current_chart_type["value"] == "pie":
-            chart_widget = build_pie_chart(data)
-        else:
-            chart_widget = build_bar_chart(data)
-
-        chart_body.controls = [
-            ft.Container(
-                bgcolor=soft_bg,
-                border_radius=12,
-                padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                content=ft.Row(
-                    [
-                        ft.Icon(
-                            ft.Icons.ACCOUNT_TREE_OUTLINED,
-                            size=16,
-                            color=text_secondary,
-                        ),
-                        breadcrumb_text,
-                        ft.Container(expand=True),
-                        level_back_btn,
-                    ],
-                    spacing=8,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-            ),
-            ft.Container(
-                expand=True,
-                alignment=ft.Alignment(0, 0),
-                content=chart_widget,
-            ),
-        ]
-
-        page.update()
 
     chart_switcher = ft.Row(
         [

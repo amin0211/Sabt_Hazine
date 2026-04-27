@@ -1,23 +1,27 @@
 [project]
 name = "sabte_hazine"
 version = "1.0.0"
-description = "Expense tracking app"
+description = "Sabt Hazine app"
 requires-python = ">=3.10"
 
 dependencies = [
-    "flet>=0.84.0",
+    "flet==0.84.0",
+    "flet-charts==0.84.0",
+
     "requests>=2.30.0",
     "python-dotenv>=1.0.0",
     "flask>=3.0.0",
     "openai>=2.0.0",
     "supabase>=2.0.0",
-    "SpeechRecognition",
+    "gunicorn",
+
+    # 🎤 Android STT
+    "flet-stt==0.1.5",
+
+    # 💻 Desktop recording
     "sounddevice",
-    "flet-audio-recorder",
-    "flet-permission-handler",
-    "flet_charts",
-    "SpeechRecognition",
-    "gunicorn"
+    "soundfile",
+    "numpy",
 ]
 
 [tool.flet]
@@ -25,3 +29,4 @@ permissions = ["microphone"]
 
 [tool.flet.android.permission]
 "android.permission.RECORD_AUDIO" = true
+"android.permission.MODIFY_AUDIO_SETTINGS" = true
