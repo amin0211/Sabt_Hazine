@@ -621,15 +621,6 @@ def load_leaf_hazineha():
         print(f"load_leaf_hazineha error: {e}")
         return []
 
-@lru_cache(maxsize=1)
-def load_active_hazineha():
-    try:
-        rows = load_all_hazineha()
-        return [row for row in rows if row.get("is_active", True)]
-    except Exception as e:
-        print(f"load_active_hazineha error: {e}")
-        return []
-
 
 @lru_cache(maxsize=1)
 def load_leaf_hazineha():
@@ -1839,6 +1830,7 @@ def get_budget_page_data(year_month: str):
     """
 
     user = get_current_user()
+    print("BUDGET USER:", user)    
     if not user:
         return {
             "categories": [],

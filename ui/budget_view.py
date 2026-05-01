@@ -67,11 +67,18 @@ def budget_view(page: ft.Page, year_month: str | None = None):
 
         carry_budgets_to_current_month()
 
-        expanded_nodes["ids"].add(2)  # هزینه‌های خانواده
 
         data = get_budget_page_data(year_month)
+        print("BUDGET DATA:", data)
+        print("CATEGORIES COUNT:", len(data.get("categories", [])))
+        print("FIRST CATEGORIES:", data.get("categories", [])[:5])
 
-        print("CATEGORIES:", data["categories"][:5])
+
+
+        for root in get_budget_roots():
+            expanded_nodes["ids"].add(root["id"])
+            
+        # print("CATEGORIES:", data["categories"][:5])
         categories = data["categories"]
         costs = data["costs"]
 
@@ -143,6 +150,12 @@ def budget_view(page: ft.Page, year_month: str | None = None):
 
         return False
 
+    def get_budget_roots():
+        return [
+            c for c in data["categories"]
+            if c.get("id_parent") in (None, 0)
+        ]
+    
     def start_edit(category_id):
         editing_category_id["value"] = category_id
 
@@ -428,10 +441,8 @@ def budget_view(page: ft.Page, year_month: str | None = None):
         rebuild_summary()
 
         
-        root_categories = [
-            c for c in data["categories"]
-            if c.get("id") == 2
-        ]
+
+        root_categories = get_budget_roots()
 
         for root in root_categories:
             for row in build_category_rows(root, 0):
@@ -485,19 +496,7 @@ def budget_view(page: ft.Page, year_month: str | None = None):
     )
 
     refresh_data()
-    expanded_nodes["ids"].add(2)
-    rebuild_summary()
-
-    tree_column.controls.clear()
-
-    root_categories = [
-        c for c in data["categories"]
-        if c.get("id") == 2
-    ]
-
-    for root in root_categories:
-        for row in build_category_rows(root, 0):
-            tree_column.controls.append(row)
+    rebuild()
 
     return ft.View(
         route="/budget_view",
