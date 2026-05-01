@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+# from zoneinfo import ZoneInfo
 
 from services.parser_service import parse_expense
 from services.supabase_service import (
@@ -10,6 +11,8 @@ from services.supabase_service import (
     find_member_by_name,
 )
 
+# tz = ZoneInfo("America/Vancouver")
+# now = datetime.now(tz)
 
 def normalize_date(date_str, text):
     if date_str:

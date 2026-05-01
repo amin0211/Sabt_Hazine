@@ -188,6 +188,8 @@ def hazinaha_view(page: ft.Page):
         return response.data or []
 
     def build_tree_from_db(data):
+        if not data:
+            return [], {}
         nodes = {}
 
         for item in data:
@@ -208,10 +210,11 @@ def hazinaha_view(page: ft.Page):
 
         for root in root_nodes_local:
             root.expanded = True
-
             for child in root.children:
                 child.expanded = False
-                return root_nodes_local, nodes
+
+        # ✅ این باید بیرون حلقه باشد
+        return root_nodes_local, nodes
 
     def update_title(node_id, new_title):
         (
@@ -244,6 +247,11 @@ def hazinaha_view(page: ft.Page):
         return res.data[0]["id"]
 
     data = load_data_from_db()
+
+    # print("CURRENT USER ID:", current_user_id)
+    # print("HAZINEHA DATA COUNT:", len(data) if data else 0)
+    # print("HAZINEHA DATA:", data[:5] if data else data)
+
     root_nodes, nodes_dict = build_tree_from_db(data)
 
     cost_map = load_cost_sums_filtered()

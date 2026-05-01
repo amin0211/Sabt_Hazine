@@ -157,13 +157,13 @@ def register_view(page: ft.Page):
     view = ft.View(
         route="/register",
         controls=[
-            ft.Container(height=20),
-            ft.Text("Register", size=28, weight=ft.FontWeight.BOLD),
+            # ft.Container(height=10),
+            ft.Text("Register", size=24, weight=ft.FontWeight.BOLD),
 
-            ft.Container(height=10),
+            ft.Container(height=4),
             language_dropdown,
 
-            ft.Container(height=10),
+            ft.Container(height=4),
             email,
             password,
             confirm_password,
@@ -172,7 +172,7 @@ def register_view(page: ft.Page):
             family,
             birthdate,
 
-            ft.Container(height=10),
+            # ft.Container(height=10),
             status_text,
 
             ft.Container(height=10),
