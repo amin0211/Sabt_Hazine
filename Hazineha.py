@@ -80,12 +80,21 @@ def hazinaha_view(page: ft.Page):
     picker_mode = page.data.get("category_picker_mode", False)
     current_category_id = page.data.get("category_picker_current_id")
 
-    def go_back(e):
+    def get_from_route():
         if page.data.get("from") == "dashboard_view":
-            page.data["from"] = None
-            page.go("/dashboard_view")
-        else:
-            page.go("/sabtehazine")
+            return "/dashboard_view"
+
+        return "/sabtehazine"
+
+
+    def go_back(e):
+        page.go(get_from_route())   # یا هر صفحه‌ای که می‌خوای برگرده
+
+        # if page.data.get("from") == "dashboard_view":
+        #     page.data["from"] = None
+        #     page.go("/dashboard_view")
+        # else:
+        #     page.go("/sabtehazine")
 
     def confirm_category_pick(e=None):
         selected_node_id = selected_id["value"]
@@ -232,6 +241,7 @@ def hazinaha_view(page: ft.Page):
             .eq("user_id", current_user_id)
             .execute()
         )
+        page.data["hazineha_changed"] = True
 
     def insert_node(title, parent_id):
         res = (
@@ -244,6 +254,7 @@ def hazinaha_view(page: ft.Page):
             })
             .execute()
         )
+        page.data["hazineha_changed"] = True
 
         if hasattr(load_all_hazineha, "cache_clear"):
             load_all_hazineha.cache_clear()
@@ -336,6 +347,9 @@ def hazinaha_view(page: ft.Page):
                 .execute()
             )
 
+            page.data["hazineha_changed"] = True
+
+
             if hasattr(load_all_hazineha, "cache_clear"):
                 load_all_hazineha.cache_clear()
 
@@ -344,6 +358,7 @@ def hazinaha_view(page: ft.Page):
                 
             parent.children.remove(child)
             rebuild_tree()
+        
 
     def start_adding_child(node, e=None):
         node.adding_child = True
@@ -792,7 +807,7 @@ def hazinaha_view(page: ft.Page):
         icon_size=18,
         width=34,
         height=34,
-        on_click=lambda e: page.go("/sabtehazine"),
+        on_click=go_back,
     )
 
     search_field = ft.TextField(

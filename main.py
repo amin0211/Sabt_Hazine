@@ -217,7 +217,11 @@ def main(page: ft.Page):
             page.views.append(income_view(page))
 
         elif page.route == "/budget_view":
+            page.views.clear()
             page.views.append(budget_view(page))
+
+        # elif page.route == "/budget_view":
+        #     page.views.append(budget_view(page))
 
         elif page.route == "/dashboard_view":
             page.views.append(dashboard_view(page))

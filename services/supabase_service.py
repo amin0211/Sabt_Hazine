@@ -1850,6 +1850,7 @@ def get_budget_page_data(year_month: str):
     else:
         end_date = date(year, month + 1, 1)
 
+    
     categories = load_active_hazineha()
 
     budgets = (

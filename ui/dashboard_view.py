@@ -38,6 +38,11 @@ def dashboard_view(page: ft.Page):
         # page.go("/budget_view")
         page.data["from"] = "dashboard_view"
         page.go("/budget_view")    
+
+    def open_hazinaha_view(e):
+        # page.go("/budget_view")
+        page.data["from"] = "dashboard_view"
+        page.go("/hazinaha_view")    
         
     def progress_color(value):
         if value < 0.7:
@@ -250,11 +255,8 @@ def dashboard_view(page: ft.Page):
                         ),
                         ft.ElevatedButton(
                             content=ft.Text("Categories"),
-                            on_click=lambda e: (
-                                page.data.update({"from": "dashboard_view"}),
-                                page.go("/hazinaha_view")
-                            ),
-                        )                   
+                            on_click=open_hazinaha_view,
+                        ),                   
                     ],
                     spacing=8,
                 ),

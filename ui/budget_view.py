@@ -14,6 +14,7 @@ from services.supabase_service import (
     delete_budget,
     calculate_budget_spent,
     carry_budgets_to_current_month,
+    clear_hazineha_cache,
 )
 
 
@@ -65,14 +66,21 @@ def budget_view(page: ft.Page, year_month: str | None = None):
     def refresh_data():
         nonlocal data, budgets
 
+        if page.data.get("hazineha_changed"):
+            clear_hazineha_cache()
+            page.data["hazineha_changed"] = False
+        
         carry_budgets_to_current_month()
 
 
         data = get_budget_page_data(year_month)
-        print("BUDGET DATA:", data)
-        print("CATEGORIES COUNT:", len(data.get("categories", [])))
-        print("FIRST CATEGORIES:", data.get("categories", [])[:5])
-
+        # print("BUDGET DATA:", data)
+        # print("CATEGORIES COUNT:", len(data.get("categories", [])))
+        # print("FIRST CATEGORIES:", data.get("categories", [])[:5])
+        # print("CATEGORY TITLES:", [
+        #     (c.get("id"), c.get("title"))
+        #     for c in data.get("categories", [])[:20]
+        # ])
 
 
         for root in get_budget_roots():
@@ -149,6 +157,28 @@ def budget_view(page: ft.Page, year_month: str | None = None):
                 return True
 
         return False
+
+
+    def get_children_budget_total(category_id):
+        total_amount = 0
+        total_spent = 0
+
+        for child in get_children(category_id):
+            child_id = child["id"]
+
+            if child_id in budgets:
+                total_amount += budgets[child_id]["amount"]
+                total_spent += budgets[child_id]["spent"]
+
+            child_total = get_children_budget_total(child_id)
+            total_amount += child_total["amount"]
+            total_spent += child_total["spent"]
+
+        return {
+            "amount": total_amount,
+            "spent": total_spent,
+        }
+
 
     def get_budget_roots():
         return [
@@ -244,12 +274,12 @@ def budget_view(page: ft.Page, year_month: str | None = None):
                     [
                         ft.Text(
                             f"{spent:,.0f} / {amount:,.0f}",
-                            size=12,
+                            size=11,
                             weight=ft.FontWeight.BOLD,
                         ),
                         ft.ProgressBar(
                             value=percent,
-                            width=105,
+                            width=85,
                             height=5,
                             color=color,
                             bgcolor="#E5E7EB",
@@ -264,20 +294,66 @@ def budget_view(page: ft.Page, year_month: str | None = None):
                 ),
                 ft.IconButton(
                     icon=ft.Icons.EDIT,
-                    icon_size=17,
-                    tooltip="ویرایش بودجه",
+                    icon_size=13,
+                    width=22,
+                    height=22,
+                    style=ft.ButtonStyle(
+                        padding=0,
+                    ),
+                    # tooltip="ویرایش بودجه",
                     on_click=lambda e, cid=category_id: start_edit(cid),
                 ),
                 ft.IconButton(
                     icon=ft.Icons.DELETE_OUTLINE,
-                    icon_size=17,
-                    tooltip="حذف بودجه",
+                    icon_size=13,
+                    width=22,
+                    height=22,
+                    style=ft.ButtonStyle(
+                        padding=0,
+                    ),
+                    # tooltip="حذف بودجه",
                     on_click=lambda e, cid=category_id: remove_budget(cid),
                 ),
             ],
-            spacing=0,
+            spacing=2,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
+
+    def build_children_budget_info(category_id):
+        total = get_children_budget_total(category_id)
+
+        amount = total["amount"]
+        spent = total["spent"]
+        remaining = amount - spent
+
+        percent = 0 if amount <= 0 else min(spent / amount, 1)
+        color = status_color(amount, spent)
+
+        return ft.Column(
+            [
+                ft.Text(
+                    f"{spent:,.0f} / {amount:,.0f}",
+                    size=12,
+                    weight=ft.FontWeight.BOLD,
+                ),
+                ft.ProgressBar(
+                    value=percent,
+                    width=105,
+                    height=5,
+                    color=color,
+                    bgcolor="#E5E7EB",
+                ),
+                ft.Text(
+                    f"مانده: {remaining:,.0f}",
+                    size=10,
+                    color=color,
+                ),
+            ],
+            spacing=2,
+            horizontal_alignment=ft.CrossAxisAlignment.END,
+        )
+
+
 
     def build_edit_box(category_id):
         return ft.Row(
@@ -337,7 +413,18 @@ def budget_view(page: ft.Page, year_month: str | None = None):
             [
                 ft.Container(width=left_padding),
                 expand_button,
-                ft.Text(title, size=13, weight=ft.FontWeight.W_500),
+                ft.Container(
+                    expand=True,
+                    content=ft.Text(
+                        title,
+                        size=13,
+                        weight=ft.FontWeight.W_500,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        max_lines=1,
+                        tooltip=title,
+                    ),
+                )                
+
             ],
             spacing=2,
             expand=True,
@@ -357,11 +444,7 @@ def budget_view(page: ft.Page, year_month: str | None = None):
             right_part = build_budget_info(category_id)
 
         elif child_has_budget:
-            right_part = ft.Text(
-                "بودجه در زیرمجموعه دارد",
-                size=10,
-                color="#9CA3AF",
-            )
+            right_part = build_children_budget_info(category_id)
 
         else:
             right_part = ft.TextButton(
@@ -374,10 +457,22 @@ def budget_view(page: ft.Page, year_month: str | None = None):
 
         row = ft.Container(
             content=ft.Row(
-                [title_part, right_part],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                [
+                    ft.Container(
+                        content=title_part,
+                        expand=True,
+                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                    ),
+                    ft.Container(
+                        content=right_part,
+                        width=120,
+                        alignment=ft.Alignment.CENTER_RIGHT,
+                    ),
+                ],
+                spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
+            ),            
+            
             padding=ft.padding.symmetric(horizontal=8, vertical=5),
             border_radius=9,
             bgcolor="#FFFFFF",
