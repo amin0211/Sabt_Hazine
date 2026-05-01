@@ -1,5 +1,5 @@
 import flet as ft
-from datetime import date
+from datetime import date, datetime
 import asyncio
 from queue import Queue, Empty
 # from Hazineha import hazinaha_view
@@ -19,9 +19,15 @@ from services.supabase_service import (
 from services.openai_service import get_embedding
 from services.parser_service import normalize_text
 from services.i18n import t
-from datetime import datetime
+from zoneinfo import ZoneInfo
 
+TZ = ZoneInfo("America/Vancouver")
 
+def now_local():
+    return datetime.now(TZ)
+
+def today_local():
+    return now_local().date()
 
 
 def build_chat_ui(
@@ -430,8 +436,8 @@ def build_chat_ui(
         on_submit=send_message,
     )
 
-    start_date = date.today()
-    end_date = date.today()
+    start_date = today_local()
+    end_date = today_local()
 
     start_picker = ft.DatePicker(value=start_date)
     end_picker = ft.DatePicker(value=end_date)
@@ -714,7 +720,7 @@ def build_chat_ui(
 
 
     def refresh_summary():
-        current_ym = date.today().strftime("%Y-%m")
+        current_ym = today_local().strftime("%Y-%m")
         summary_month_text.value = f"( {current_ym} )"
 
         try:

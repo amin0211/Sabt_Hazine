@@ -3,11 +3,14 @@ import json
 from openai import OpenAI
 from services.supabase_service import get_members
 from datetime import datetime
-
+from zoneinfo import ZoneInfo
 
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None
 
+
+tz = ZoneInfo("America/Vancouver")
+now = datetime.now(tz)
 
 def is_openai_available():
     return client is not None
@@ -27,7 +30,7 @@ def get_embedding(text: str):
         if not text:
             return None
 
-        now = datetime.now()
+        now = now
         print("ssssssss 311 = ")
         print(now.strftime("%H:%M:%S.%f")[:-3])
 
@@ -36,7 +39,7 @@ def get_embedding(text: str):
             input=text
         )
 
-        now = datetime.now()
+        now = now
         print("ssssssss 312 = ")
         print(now.strftime("%H:%M:%S.%f")[:-3])
 
@@ -143,7 +146,7 @@ known_names:
 #         return None
 
     
-#     now = datetime.now()
+#     now = now
 #     print("qqq = ")
 #     print(now.strftime("%H:%M:%S.%f")[:-3])
 
@@ -219,7 +222,7 @@ known_names:
 #             reasoning_effort="minimal",
 #         )
 
-#         now = datetime.now()
+#         now = now
 #         print("www = ")
 #         print(now.strftime("%H:%M:%S.%f")[:-3])
 #         raw = response.choices[0].message.content

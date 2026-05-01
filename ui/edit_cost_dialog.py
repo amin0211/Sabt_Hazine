@@ -4,6 +4,13 @@ from datetime import date, datetime
 from services.supabase_service import get_members, add_member
 from ui.member_manager_shared import open_member_picker_dialog
 from services.i18n import t
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Vancouver")
+
+def today_local():
+    return datetime.now(TZ).date()
+
 
 def open_edit_cost_dialog(
     page: ft.Page,
@@ -128,7 +135,7 @@ def open_edit_cost_dialog(
                 return datetime.strptime(value[:10], "%Y-%m-%d").date()
         except Exception:
             pass
-        return date.today()
+        return today_local()
 
     def format_currency_label(currency_id):
         currency_map = {

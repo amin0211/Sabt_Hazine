@@ -6,7 +6,15 @@ from functools import lru_cache
 from datetime import datetime, date, timedelta
 import calendar
 from collections import defaultdict
+from zoneinfo import ZoneInfo
 
+TZ = ZoneInfo("America/Vancouver")
+
+def now_local():
+    return datetime.now(TZ)
+
+def today_local():
+    return now_local().date()
 
 load_dotenv()
 
@@ -1690,7 +1698,7 @@ def get_financial_summary(start_date, end_date):
 
 
 
-    today = date.today()
+    today = today_local()
     start_month = today.replace(day=1)
 
     if today.month == 12:
@@ -1724,7 +1732,6 @@ def get_financial_summary(start_date, end_date):
     }
 
 
-from datetime import date
 
 
 def carry_monthly_income_to_current_month():
@@ -1732,8 +1739,9 @@ def carry_monthly_income_to_current_month():
     if not user:
         raise Exception("User is not logged in")
 
-    current_ym = date.today().strftime("%Y-%m")
-    today_iso = date.today().isoformat()
+    today = today_local()
+    current_ym = today.strftime("%Y-%m")
+    today_iso = today.isoformat()
 
     monthly_rows = (
         supabase.table("income_transactions")
@@ -2009,9 +2017,8 @@ def carry_budgets_to_current_month():
     if not user:
         return []
 
-    from datetime import date
 
-    today = date.today()
+    today = today_local()
     current_ym = today.strftime("%Y-%m")
     current_start = f"{current_ym}-01"
 
@@ -2085,7 +2092,7 @@ def get_current_month_dashboard_data(year_month=None):
     if not user:
         return None
 
-    today = date.today()
+    today = today_local()
 
     if not year_month:
         year_month = today.strftime("%Y-%m")

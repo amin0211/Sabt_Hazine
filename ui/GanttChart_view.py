@@ -1,10 +1,17 @@
 import flet as ft
 import flet_charts as fch
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from services.i18n import t
 
 from services.supabase_service import load_all_hazineha, load_my_costs_by_date
 import traceback
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Vancouver")
+
+def today_local():
+    return datetime.now(TZ).date()
+
 
 class Node:
     def __init__(self, id, title, parent_id):
@@ -30,7 +37,7 @@ def GanttChart_view(page: ft.Page, theme):
     current_parent_id = {"value": None}
     path_stack = []
 
-    today = date.today()
+    today = today_local()
     start_date = today.replace(day=1)
 
     if today.month == 12:

@@ -108,8 +108,8 @@ def register_view(page: ft.Page):
             bdate = (birthdate.value or "").strip()
             selected_language_id = language_dropdown.value
 
-            if not em or not pwd or not cpwd or not uname:
-                show_message("Email, password, confirm password, and username are required.")
+            if not em or not pwd or not cpwd:
+                show_message("Email, password and confirm password are required.")
                 return
 
             if not is_valid_email(em):
@@ -131,7 +131,7 @@ def register_view(page: ft.Page):
 
             auth_res = sign_up_user(em, pwd)
             user = auth_res.user
-            print(f"11 = {user}")
+            # print(f"11 = {user}")
 
             if not user:
                 show_message("Registration failed.")
@@ -160,14 +160,14 @@ def register_view(page: ft.Page):
             # ft.Container(height=10),
             ft.Text("Register", size=24, weight=ft.FontWeight.BOLD),
 
-            ft.Container(height=4),
+            # ft.Container(height=4),
             language_dropdown,
 
             ft.Container(height=4),
             email,
             password,
             confirm_password,
-            username,
+            # username,
             name,
             family,
             birthdate,

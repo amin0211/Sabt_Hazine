@@ -2,11 +2,18 @@ import flet as ft
 from supabase import create_client
 from dotenv import load_dotenv
 import os
-from datetime import date
+from datetime import datetime, date
 from services.i18n import t
 import asyncio
 
 from services.supabase_service import load_all_hazineha, load_leaf_hazineha, get_current_user
+
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Vancouver")
+
+def today_local():
+    return datetime.now(TZ).date()
 
 SUPABASE_URL = "https://gisyttrgmhbuxvmsjdfm.supabase.co"
 
@@ -112,11 +119,11 @@ def hazinaha_view(page: ft.Page):
             print(f"SAFE UPDATE SKIPPED: {e}")
 
     def first_day_of_current_month():
-        today_ = date.today()
+        today_ = today_local()
         return date(today_.year, today_.month, 1)
 
     start_date = first_day_of_current_month()
-    end_date = date.today()
+    end_date = today_local()
 
     start_picker = ft.DatePicker(value=start_date)
     end_picker = ft.DatePicker(value=end_date)

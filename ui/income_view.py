@@ -1,5 +1,12 @@
 import flet as ft
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Vancouver")
+
+def today_local():
+    return datetime.now(TZ).date()
+
 
 from services.supabase_service import (
     get_accounts,
@@ -13,7 +20,7 @@ from services.supabase_service import (
 
 
 def income_view(page: ft.Page):
-    selected_year_month = {"value": date.today().strftime("%Y-%m")}
+    selected_year_month = {"value": today_local().strftime("%Y-%m")}
     accounts_cache = {"data": []}
 
     tx_list = ft.Column(spacing=10)
@@ -113,7 +120,7 @@ def income_view(page: ft.Page):
 
         date_tf = ft.TextField(
             label="Date (YYYY-MM-DD)",
-            value=(tx or {}).get("transaction_date") or str(date.today()),
+            value=(tx or {}).get("transaction_date") or str(today_local()),
         )
 
         account_dd = ft.Dropdown(

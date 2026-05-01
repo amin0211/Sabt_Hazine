@@ -1,22 +1,30 @@
 import flet as ft
 from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Vancouver")
+
+def today_local():
+    return datetime.now(TZ).date()
 
 from services.supabase_service import get_current_month_dashboard_data
 
 
 def dashboard_view(page: ft.Page):
     data = get_current_month_dashboard_data()
-
+    today = today_local()
+     
     if not data:
         data = {
-            "month": date.today().strftime("%Y-%m"),
+            "month": today.strftime("%Y-%m"),
             "total_income": 0,
             "total_expense": 0,
             "balance": 0,
             "budget_total": 0,
             "budget_used_percent": 0,
             "income_used_percent": 0,
-            "days_passed": date.today().day,
+            "days_passed": today.day,
             "days_in_month": 30,
             "avg_daily_spending": 0,
             "projected_end_month_expense": 0,

@@ -1,5 +1,12 @@
 import flet as ft
-from datetime import date
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Vancouver")
+
+def today_local():
+    return datetime.now(TZ).date()
+
 
 from services.supabase_service import (
     get_budget_page_data,
@@ -12,10 +19,10 @@ from services.supabase_service import (
 
 def budget_view(page: ft.Page, year_month: str | None = None):
     if not year_month:
-        year_month = date.today().strftime("%Y-%m")
+        year_month = today_local().strftime("%Y-%m")
 
     if not year_month:
-        year_month = date.today().strftime("%Y-%m")
+        year_month = today_local().strftime("%Y-%m")
 
 
 

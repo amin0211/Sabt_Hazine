@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
+tz = ZoneInfo("America/Vancouver")
+now = datetime.now(tz)
 
 def normalize_date(date_str, text):
     if date_str:
@@ -8,12 +11,12 @@ def normalize_date(date_str, text):
     text = (text or "").lower()
 
     if "yesterday" in text or "دیروز" in text:
-        return (datetime.now() - timedelta(days=1)).date().isoformat()
+        return (now - timedelta(days=1)).date().isoformat()
 
     if "today" in text or "امروز" in text:
-        return datetime.now().date().isoformat()
+        return now.date().isoformat()
 
-    return datetime.now().date().isoformat()
+    return now.date().isoformat()
 
 
 def is_valid_email(email: str) -> bool:
