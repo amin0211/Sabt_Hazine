@@ -159,7 +159,19 @@ def main(page: ft.Page):
             saved_lang = await page.shared_preferences.get("lang")
             page.data["lang"] = saved_lang or page.data.get("lang", "fa")
 
-        protected_routes = ["/main", "/sabtehazine", "/hazinaha_view", "/GanttChart_view", "/members", "/profile"]
+
+        protected_routes = [
+            "/main",
+            "/sabtehazine",
+            "/hazinaha_view",
+            "/GanttChart_view",
+            "/members",
+            "/profile",
+            "/accounts",
+            "/income",
+            "/budget_view",
+            "/dashboard_view",
+        ]
 
         if page.route in protected_routes and not logged_in:
             page.go("/login")
