@@ -239,7 +239,7 @@ def main(page: ft.Page):
     page.run_task(go_start)
 
     page.title = "Sabt Hazineha"
-    page.add(ft.Text("Hello from Web"))
+    # page.add(ft.Text("Hello from Web"))
 
 
 port = int(os.environ.get("PORT", 8000))
