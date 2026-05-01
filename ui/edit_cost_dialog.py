@@ -26,6 +26,7 @@ def open_edit_cost_dialog(
     RADIUS = 16
     
 
+    original_category_id = row.get("id_hazine")
 
     selected_member = {
         "member_id": row.get("member_id"),
@@ -326,6 +327,7 @@ def open_edit_cost_dialog(
             "category_title": selected_category["category_title"],
             "currency_id": row.get("currency_id"),
             "member_id": selected_member["member_id"],
+            "old_category_id": original_category_id,
         }
 
         try:

@@ -7,11 +7,20 @@ from services.voice_service_router import start_recording, stop_recording
 # from services.supabase_service import insert_log
 from ui.edit_cost_dialog import open_edit_cost_dialog
 
-from services.supabase_service import upsert_category_learning, update_category_learning_embedding, sign_out_user, get_members, add_member
+from services.supabase_service import (
+    upsert_category_learning,
+    update_category_learning_embedding,
+    sign_out_user,
+    get_members,
+    add_member,
+    get_financial_summary,
+    get_income_transactions_by_month,
+)
 from services.openai_service import get_embedding
 from services.parser_service import normalize_text
 from services.i18n import t
 from datetime import datetime
+
 
 
 
@@ -40,6 +49,8 @@ def build_chat_ui(
     input_bg =  "#FFFFFF"
     border_color = "#E5E7EB"
     success_bg =  "#EEFDF3"
+
+
 
     # page.window.maximized = True
 
@@ -107,6 +118,57 @@ def build_chat_ui(
                     ),
                     on_click=lambda e: page.go("/members"),
                 ),
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ANALYTICS_OUTLINED,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "dashboard")),
+                    ),
+                    on_click=lambda e: page.go("/dashboard_view"),
+                ),
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ACCOUNT_BALANCE,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "Accounts")),
+                    ),
+                    on_click=lambda e: page.go("/accounts"),
+                ),
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "Income")),
+                    ),
+                    on_click=lambda e: page.go("/income"),
+                ),
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "Budget")),
+                    ),
+                    on_click=lambda e: page.go("/budget_view"),
+                ),
+
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ACCOUNT_TREE_OUTLINED,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "Categories")),
+                    ),
+                    on_click=lambda e: page.go("/hazinaha_view"),
+                ),
+
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ANALYTICS_OUTLINED,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "GanttChart")),
+                    ),
+                    on_click=lambda e: page.go("/GanttChart_view"),
+                ),
+
                 ft.PopupMenuItem(),
                 ft.PopupMenuItem(
                     icon=ft.Icons.LOGOUT_ROUNDED,
@@ -243,6 +305,14 @@ def build_chat_ui(
         def close_dlg(e=None):
             dlg.open = False
             page.update()
+            
+        # ذخیره با category خالی
+            parsed_result["category_id"] = None
+            parsed_result["category_title"] = None
+            parsed_result["matched"] = False
+
+            on_confirm(parsed_result)
+
 
         buttons = []
         for cat in suggestions[:3]:
@@ -307,6 +377,7 @@ def build_chat_ui(
                     new_row = await asyncio.to_thread(controller.save_new, final_parsed)
                     remove_empty_state()
                     chat_column.controls.insert(0, create_message(new_row))
+                    refresh_summary()
                     input_field.value = ""
                     input_field.data = None
                     await input_field.focus()
@@ -420,6 +491,7 @@ def build_chat_ui(
             for row in res:
                 chat_column.controls.append(create_message(row))
 
+        refresh_summary()
         page.update()   
 
 
@@ -444,20 +516,232 @@ def build_chat_ui(
     start_picker.on_change = update_start
     end_picker.on_change = update_end
 
-   # دکمه آیکونی کوچک reusable
-    def small_icon_btn(icon, on_click):
+
+    summary_balance = ft.Text(
+        "$0.00",
+        size=26,
+        weight=ft.FontWeight.BOLD,
+        color="#111827",
+    )
+
+    summary_income = ft.Text(
+        "$0.00",
+        size=13,
+        weight=ft.FontWeight.BOLD,
+        color="#16A34A",
+    )
+    summary_month_text = ft.Text(
+        "",
+        size=10,
+        color="#6B7280",
+    )
+
+    summary_expense = ft.Text(
+        "$0.00",
+        size=13,
+        weight=ft.FontWeight.BOLD,
+        color="#DC2626",
+    )
+
+    summary_left = ft.Text(
+        "$0.00",
+        size=13,
+        weight=ft.FontWeight.BOLD,
+        color=PRIMARY,
+    )
+
+    def money(v):
+        try:
+            return f"${float(v):,.2f}"
+        except:
+            return "$0.00"
+
+
+    def build_summary_item(label, value_control, icon, color):
         return ft.Container(
-            width=46,
-            height=46,
-            border_radius=14,
+            expand=True,
+            padding=ft.padding.symmetric(horizontal=10, vertical=9),
+            border_radius=16,
             bgcolor="#FFFFFF",
-            border=ft.border.all(1, border_color),
-            alignment=ft.Alignment.CENTER,
-            ink=True,
-            on_click=on_click,
-            content=ft.Icon(icon, color=PRIMARY, size=20),
+            border=ft.border.all(1, "#EEF0F4"),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(icon, size=14, color=color),
+                            ft.Text(label, size=10, color="#6B7280"),
+                        ],
+                        spacing=4,
+                        tight=True,
+                    ),
+                    value_control,
+                ],
+                spacing=4,
+            ),
         )
 
+
+    summary_card = ft.Container(
+        padding=16,
+        border_radius=24,
+        bgcolor="#FFFFFF",
+        border=ft.border.all(1, "#E5E7EB"),
+        shadow=ft.BoxShadow(
+            blur_radius=18,
+            spread_radius=0,
+            color="#18000000",
+            offset=ft.Offset(0, 6),
+        ),
+        content=ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    "Total Balance",
+                                    size=12,
+                                    color="#6B7280",
+                                    weight=ft.FontWeight.W_500,
+                                ),
+                                summary_balance,
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+                        ft.Container(
+                            width=44,
+                            height=44,
+                            border_radius=16,
+                            bgcolor="#EEF2FF",
+                            alignment=ft.Alignment.CENTER,
+                            content=ft.Icon(
+                                ft.Icons.ACCOUNT_BALANCE_WALLET_ROUNDED,
+                                color=PRIMARY,
+                                size=22,
+                            ),
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+
+                ft.Container(height=1, bgcolor="#F3F4F6"),
+
+                ft.Row(
+                    [
+                        build_summary_item(
+                            "Income",
+                            summary_income,
+                            ft.Icons.SOUTH_WEST_ROUNDED,
+                            "#16A34A",
+                        ),
+                        build_summary_item(
+                            "Expense",
+                            summary_expense,
+                            ft.Icons.NORTH_EAST_ROUNDED,
+                            "#DC2626",
+                        ),
+                        build_summary_item(
+                            "Left",
+                            summary_left,
+                            ft.Icons.SAVINGS_OUTLINED,
+                            PRIMARY,
+                        ),
+                    ],
+                    spacing=8,
+                ),
+            ],
+            spacing=14,
+        ),
+    )
+
+    summary_card = ft.Container(
+        padding=14,
+        border_radius=20,
+        bgcolor="#FFFFFF",
+        border=ft.border.all(1, "#E5E7EB"),
+        content=ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Column(
+                            [
+                                ft.Row(
+                                    [
+                                        ft.Text("Total Balance", size=12, color="#6B7280"),
+                                        summary_month_text,
+                                    ],
+                                    spacing=6,
+                                ),
+                                summary_balance,
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+                        ft.Container(
+                            width=42,
+                            height=42,
+                            border_radius=14,
+                            bgcolor="#EEF2FF",
+                            alignment=ft.Alignment.CENTER,
+                            content=ft.PopupMenuButton(
+                                icon=ft.Icons.MENU_ROUNDED,
+                                tooltip="Menu",
+                                items=build_main_menu().items,
+                            ),
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    [
+                        # build_summary_item("Income", summary_income, ft.Icons.ARROW_DOWNWARD_ROUNDED, "#16A34A"),
+                        build_summary_item(
+                            "Income",
+                            summary_income,
+                            ft.Icons.ARROW_DOWNWARD_ROUNDED,
+                            "#16A34A",
+                        ),
+                        build_summary_item("Expense", summary_expense, ft.Icons.ARROW_UPWARD_ROUNDED, "#DC2626"),
+                        build_summary_item("Left", summary_left, ft.Icons.SAVINGS_OUTLINED, PRIMARY),
+                    ],
+                    spacing=8,
+                ),
+            ],
+            spacing=12,
+        ),
+    )
+
+
+    def refresh_summary():
+        current_ym = date.today().strftime("%Y-%m")
+        summary_month_text.value = f"( {current_ym} )"
+
+        try:
+            data = get_financial_summary(
+                start_date.isoformat(),
+                end_date.isoformat()
+            )
+
+            income_rows = get_income_transactions_by_month(current_ym)
+
+            total_income = sum(
+                float(row.get("amount") or 0)
+                for row in income_rows
+                if row.get("status") == "confirmed"
+            )
+
+            expense = float(data.get("expense") or 0)
+
+            summary_balance.value = money(total_income - expense)
+            summary_income.value = money(total_income)
+            summary_expense.value = money(expense)
+            summary_left.value = money(total_income - expense)
+
+        except Exception as ex:
+            print("refresh_summary error:", ex)
+
+        safe_page_update(page)
 
     top_bar = ft.Container(
         gradient=ft.LinearGradient(
@@ -474,6 +758,7 @@ def build_chat_ui(
         # ),
         content=ft.Column(
             [
+                summary_card,
                 # ردیف اول: انتخاب تاریخ
                 ft.Row(
                     [
@@ -481,7 +766,7 @@ def build_chat_ui(
                             [
                                 start_btn,
                                 end_btn,
-                                build_main_menu(),
+                                # build_main_menu(),
                             ],
                             spacing=8,
                             alignment=ft.MainAxisAlignment.START,
@@ -492,20 +777,6 @@ def build_chat_ui(
                 ),
 
                 # ردیف دوم: دکمه های گزارش و درختی
-                ft.Row(
-                    [
-                        small_icon_btn(
-                            ft.Icons.ACCOUNT_TREE_OUTLINED,
-                            lambda e: page.go("/hazinaha_view")
-                        ),
-                        small_icon_btn(
-                            ft.Icons.ANALYTICS_OUTLINED,
-                            lambda e: page.go("/GanttChart_view") 
-                        ),
-                    ],
-                    spacing=10,
-                    alignment=ft.MainAxisAlignment.END,
-                ),
             ],
             spacing=10,
             tight=True,
@@ -522,6 +793,7 @@ def build_chat_ui(
         page.go("/hazinaha_view")
                 
     def create_message(row):
+        
         is_invalid = not row.get("id_hazine")
         def delete_message(e):
             supabase_service.delete_my_cost(row["id"])
@@ -568,6 +840,8 @@ def build_chat_ui(
         title = row.get("title", t(page, "edit_cost_title"))
         date_text = row.get("date_cost", "")
         category_title = row.get("category_title", "")
+        member_name = row.get("member_name", "")
+
 
         def tiny_action_btn(icon, color, on_click):
             return ft.IconButton(
@@ -618,21 +892,34 @@ def build_chat_ui(
                                 max_lines=1,
                                 overflow=ft.TextOverflow.ELLIPSIS,
                             ),
-                            ft.Row(
+                            ft.Column(
                                 [
-                                    ft.Icon(ft.Icons.SCHEDULE, size=11, color="#6B7280"),
-                                    ft.Text(date_text, size=11, color="#6B7280"),
-                                    ft.Text("•", size=10, color="#9CA3AF") if category_title else ft.Container(),
+                                    ft.Row(
+                                        [
+                                            ft.Icon(ft.Icons.SCHEDULE, size=11, color="#6B7280"),
+                                            ft.Text(date_text, size=11, color="#6B7280"),
+                                            ft.Text("•", size=10, color="#9CA3AF") if category_title else ft.Container(),
+                                            ft.Text(
+                                                category_title,
+                                                size=11,
+                                                color="#6B7280",
+                                                max_lines=1,
+                                                overflow=ft.TextOverflow.ELLIPSIS,
+                                            ) if category_title else ft.Container(),
+                                        ],
+                                        spacing=4,
+                                        tight=True,
+                                    ),
+
                                     ft.Text(
-                                        category_title,
-                                        size=11,
-                                        color="#6B7280",
+                                        member_name,
+                                        size=10,
+                                        color="#9CA3AF",
                                         max_lines=1,
                                         overflow=ft.TextOverflow.ELLIPSIS,
-                                    ) if category_title else ft.Container(),
+                                    ) if member_name else ft.Container(),
                                 ],
-                                spacing=4,
-                                tight=True,
+                                spacing=2,
                             ),
                         ],
                         spacing=4,
@@ -915,8 +1202,10 @@ def build_chat_ui(
 
         if edit_row:
             def reopen_on_save(updated_data):
-                old_category_id = edit_row.get("id_hazine")
+                old_category_id = edit_row.get("old_category_id")
                 new_category_id = updated_data.get("id_hazine")
+
+                print(f" 11111 = {old_category_id}  == {new_category_id}")
 
                 updated_row = controller.edit_cost(edit_row["id"], updated_data)
 
@@ -949,10 +1238,11 @@ def build_chat_ui(
                 on_save=reopen_on_save,
             )
 
+    refresh_summary()
+
     return ft.View(
         route="/sabtehazine",
         bgcolor=APP_BG,
-        # bgcolor=bg_color,
         controls=[
             ft.Container(
                 expand=True,

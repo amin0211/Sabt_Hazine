@@ -73,6 +73,13 @@ def hazinaha_view(page: ft.Page):
     picker_mode = page.data.get("category_picker_mode", False)
     current_category_id = page.data.get("category_picker_current_id")
 
+    def go_back(e):
+        if page.data.get("from") == "dashboard_view":
+            page.data["from"] = None
+            page.go("/dashboard_view")
+        else:
+            page.go("/sabtehazine")
+
     def confirm_category_pick(e=None):
         selected_node_id = selected_id["value"]
         if not selected_node_id:
@@ -201,10 +208,10 @@ def hazinaha_view(page: ft.Page):
 
         for root in root_nodes_local:
             root.expanded = True
-            for child in root.children:
-                child.expanded = True
 
-        return root_nodes_local, nodes
+            for child in root.children:
+                child.expanded = False
+                return root_nodes_local, nodes
 
     def update_title(node_id, new_title):
         (

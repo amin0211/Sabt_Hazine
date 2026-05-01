@@ -68,55 +68,73 @@ def get_member_names_cached(ttl=60):
 
     return names
 
+def normalize_expense(data: dict) -> dict:
+    if not data:
+        data = {}
+
+    return {
+        "title": data.get("title"),
+        "price": data.get("price"),
+        "date": data.get("date"),
+        "member_name": data.get("member_name"),
+        # 👇 سازگاری با کدهای قدیمی
+        "currency": data.get("currency", None),
+    }
 
 def extract_expense_fields_with_openai(text):
     if client is None:
         return None
 
-    now = datetime.now()
-    print("qqq = ")
-    print(now.strftime("%H:%M:%S.%f")[:-3])
+    names = get_member_names_cached()
 
-    member_name = get_member_names_cached()
+    text_n = (text or "").strip()
+
+    # فقط اسم‌های مرتبط با متن
+    possible_names = [
+        n for n in names
+        if n and (n in text_n or text_n in n)
+    ]
+
+    known_names = possible_names[:10]
 
     system_prompt = f"""
-Return ONLY valid JSON with keys:
-title, price, currency, date, member_name.
+Extract expense data. Return ONLY valid JSON.
+
+Keys:
+title, price, date, member_name
 
 Rules:
-- title: short clean expense title only.
-- price: numeric amount or null.
-- currency: currency word or null.
-- date: YYYY-MM-DD or null. Never guess.
-- member_name: explicitly mentioned person/entity or null.
-- If "خودم" return "self".
-- If similar to known list, return exact known name.
+- title: short clean name.
+- price: number only or null.
+- date: YYYY-MM-DD only if explicitly mentioned, else null.
+- member_name: explicit only, else null.
+- "خودم" => "self".
+- If close to known_names, return exact match.
+- Do not guess.
 
-Known names/entities:
-{member_name}
+known_names:
+{known_names}
 """
 
     try:
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text},
+                {"role": "system", "content": system_prompt.strip()},
+                {"role": "user", "content": text_n},
             ],
             response_format={"type": "json_object"},
-            max_completion_tokens=120,
+            max_completion_tokens=70,
+            temperature=0,
         )
 
-        now = datetime.now()
-        print("www = ")
-        print(now.strftime("%H:%M:%S.%f")[:-3])
         raw = response.choices[0].message.content
-        return safe_json_load(raw)
+        parsed = safe_json_load(raw)
+        return normalize_expense(parsed)
 
     except Exception as ex:
         print("OPENAI EXTRACT ERROR:", type(ex).__name__, ex)
         return None
-
 
 
 

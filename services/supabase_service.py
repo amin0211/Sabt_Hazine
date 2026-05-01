@@ -3,7 +3,10 @@ import os
 import json
 from dotenv import load_dotenv
 from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, date, timedelta
+import calendar
+from collections import defaultdict
+
 
 load_dotenv()
 
@@ -849,9 +852,14 @@ def load_hazineha_with_embeddings(active_only=True):
 # ================= CATEGORY LEARNING =================
 def get_learned_category_exact(normalized_text):
     try:
+        user = get_current_user()
+        if not user:
+            return None
+
         res = (
             supabase.table("category_learning")
             .select("id,raw_text,normalized_text,category_id,source,confidence,use_count,last_used_at,created_at,updated_at")
+            .eq("user_id", user.id)
             .eq("normalized_text", normalized_text)
             .order("use_count", desc=True)
             .limit(1)
@@ -868,9 +876,14 @@ def get_learned_category_exact(normalized_text):
 
 def load_category_learning_rows():
     try:
+        user = get_current_user()
+        if not user:
+            return None
+
         res = (
             supabase.table("category_learning")
             .select("id,raw_text,normalized_text,category_id,source,confidence,use_count,last_used_at,created_at,updated_at,embedding_text,embedding")
+            .eq("user_id", user.id)
             .order("use_count", desc=True)
             .execute()
         )
@@ -898,61 +911,40 @@ def load_category_learning_rows():
         print(f"load_category_learning_rows error: {e}")
         return []
 
+def upsert_category_learning(
+    raw_text,
+    normalized_text,
+    category_id,
+    source="user_corrected",
+    embedding_text=None,
+):
+    user = supabase.auth.get_user()
+    user_id = user.user.id
 
-def upsert_category_learning(raw_text, normalized_text, category_id, source="user_confirmed", confidence=None, embedding_text=None):
-    try:
-        existing = (
-            supabase.table("category_learning")
-            .select("id,use_count")
-            .eq("normalized_text", normalized_text)
-            .eq("category_id", category_id)
-            .limit(1)
-            .execute()
+    data = {
+        "user_id": user_id,
+        "raw_text": raw_text,
+        "normalized_text": normalized_text,
+        "category_id": category_id,
+        "source": source,
+        "embedding_text": embedding_text or normalized_text,
+        "updated_at": "now()",
+    }
+
+    res = (
+        supabase
+        .table("category_learning")
+        .upsert(
+            data,
+            on_conflict="user_id,normalized_text"
         )
+        .execute()
+    )
 
-        rows = existing.data or []
+    if res.data:
+        return res.data[0]
 
-        if rows:
-            row_id = rows[0]["id"]
-            current_count = rows[0].get("use_count", 1) or 1
-
-            payload = {
-                "raw_text": raw_text,
-                "source": source,
-                "confidence": confidence,
-                "use_count": current_count + 1,
-                "last_used_at": datetime.utcnow().isoformat(),
-            }
-
-            if embedding_text is not None:
-                payload["embedding_text"] = embedding_text
-
-            result = (
-                supabase.table("category_learning")
-                .update(payload)
-                .eq("id", row_id)
-                .execute()
-            )
-
-            return result.data[0] if result.data else None
-
-        payload = {
-            "raw_text": raw_text,
-            "normalized_text": normalized_text,
-            "category_id": category_id,
-            "source": source,
-            "confidence": confidence,
-            "use_count": 1,
-            "last_used_at": datetime.utcnow().isoformat(),
-            "embedding_text": embedding_text or normalized_text,
-        }
-
-        result = supabase.table("category_learning").insert(payload).execute()
-        return result.data[0] if result.data else None
-
-    except Exception as e:
-        print(f"upsert_category_learning error: {e}")
-        return None
+    return None
 
 
 def update_category_learning_embedding(learning_id, embedding_vector):
@@ -977,9 +969,14 @@ def update_category_learning_embedding(learning_id, embedding_vector):
 
 def find_category_learning_exact(normalized_text: str):
     try:
+        user = get_current_user()
+        if not user:
+            return None
+        
         res = (
             supabase.table("category_learning")
             .select("id, raw_text, normalized_text, category_id, hazineha(title)")
+            .eq("user_id", user.id)
             .eq("normalized_text", normalized_text)
             .limit(1)
             .execute()
@@ -1005,6 +1002,7 @@ def find_category_learning_exact(normalized_text: str):
 
 def match_category_learning_by_embedding(embedding_vector, threshold=0.78):
     try:
+       
         res = supabase.rpc(
             "match_category_learning",
             {
@@ -1343,3 +1341,946 @@ def get_currency_id(currency):
         .execute()
     )
     return res.data[0]["id"] if res.data else 1
+
+
+# --------------َAccounts ----------
+def get_accounts():
+    user = get_current_user()
+    if not user:
+        return []
+
+    res = (
+        supabase.table("accounts")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+        .order("created_at")
+        .execute()
+    )
+
+    return res.data or []
+
+def create_account(account_type, account_name, initial_balance, currency, is_default):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    if is_default:
+        supabase.table("accounts") \
+            .update({"is_default": False}) \
+            .eq("user_id", user.id) \
+            .execute()
+
+    keywords = generate_account_keywords(account_type, account_name)
+
+    payload = {
+        "user_id": user.id,
+        "account_type": account_type,
+        "account_name": account_name,
+        "keywords": keywords,
+        "initial_balance": initial_balance,
+        "currency": currency,
+        "is_default": is_default,
+        "is_active": True,
+    }
+
+    res = supabase.table("accounts").insert(payload).execute()
+    return res.data[0] if res.data else None
+
+def update_account(account_id, account_type, account_name, initial_balance, currency, is_default):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    if is_default:
+        supabase.table("accounts") \
+            .update({"is_default": False}) \
+            .eq("user_id", user.id) \
+            .execute()
+
+    keywords = generate_account_keywords(account_type, account_name)
+
+    payload = {
+        "account_type": account_type,
+        "account_name": account_name,
+        "keywords": keywords,
+        "initial_balance": initial_balance,
+        "currency": currency,
+        "is_default": is_default,
+    }
+
+    res = (
+        supabase.table("accounts")
+        .update(payload)
+        .eq("id", account_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+def delete_account(account_id):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    supabase.table("accounts") \
+        .update({"is_active": False}) \
+        .eq("id", account_id) \
+        .eq("user_id", user.id) \
+        .execute()
+    
+def generate_account_keywords(account_type, account_name):
+    base = {
+        "bank": ["bank", "card", "debit", "atm"],
+        "cash": ["cash", "money", "wallet"],
+        "credit": ["credit", "visa", "mastercard"],
+        "savings": ["saving"],
+        "wallet": ["wallet"],
+        "custom": []
+    }
+
+    name = (account_name or "").lower().strip()
+
+    keywords = []
+    if name:
+        keywords.append(name)
+        keywords.extend(name.split())
+
+    keywords.extend(base.get(account_type, []))
+
+    return list(dict.fromkeys(keywords))
+
+
+# --------------َAccounts ----------
+# --------------transaction------------
+
+def create_transaction(
+    type,
+    title,
+    amount,
+    transaction_date,
+    account_id,
+    is_template=False,
+    repeat_type="none",
+    repeat_day=None,
+    is_active=True,
+):
+    user = get_current_user()
+    if not user:
+        raise Exception("User not logged in")
+
+    payload = {
+        "user_id": user.id,
+        "type": type,
+        "title": title,
+        "amount": amount,
+        "transaction_date": transaction_date,
+        "account_id": account_id,
+        "is_template": bool(is_template),
+        "repeat_type": repeat_type,
+        "repeat_day": repeat_day,
+        "is_auto_created": False,
+        "is_active": bool(is_active),
+    }
+
+    res = supabase.table("transactions").insert(payload).execute()
+    return res.data[0] if res.data else None
+
+
+def get_transactions(type=None):
+    user = get_current_user()
+    if not user:
+        return []
+
+    q = (
+        supabase.table("transactions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+    )
+
+    if type:
+        q = q.eq("type", type)
+
+    res = q.order("transaction_date", desc=True).execute()
+    return res.data or []
+
+
+def update_transaction(
+    tx_id,
+    title,
+    amount,
+    transaction_date,
+    account_id,
+    is_template=False,
+    repeat_type="none",
+    repeat_day=None,
+    is_active=True,
+):
+    user = get_current_user()
+    if not user:
+        raise Exception("User not logged in")
+
+    payload = {
+        "title": title,
+        "amount": amount,
+        "transaction_date": transaction_date,
+        "account_id": account_id,
+        "is_template": bool(is_template),
+        "repeat_type": repeat_type,
+        "repeat_day": repeat_day,
+        "is_active": bool(is_active),
+    }
+
+    res = (
+        supabase.table("transactions")
+        .update(payload)
+        .eq("id", tx_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+
+
+
+
+# ================= INCOME TRANSACTIONS =================
+
+def get_income_transactions_by_month(year_month):
+    user = get_current_user()
+    if not user:
+        return []
+
+    res = (
+        supabase.table("income_transactions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+        .eq("year_month", year_month)
+        .order("transaction_date", desc=True)
+        .execute()
+    )
+    return res.data or []
+
+def create_income_transaction(
+    title,
+    amount,
+    transaction_date,
+    account_id,
+    income_type="one_time",
+    status="confirmed",
+    note=None,
+):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    year_month = transaction_date[:7]
+
+    payload = {
+        "user_id": user.id,
+        "title": title,
+        "amount": amount,
+        "transaction_date": transaction_date,
+        "account_id": account_id,
+        "income_type": income_type,   # ✅ اضافه شد
+        "status": status,
+        "year_month": year_month,
+        "note": note,
+        "is_active": True,
+    }
+
+    res = supabase.table("income_transactions").insert(payload).execute()
+    return res.data[0] if res.data else None
+
+def update_income_transaction(
+    tx_id,
+    title,
+    amount,
+    transaction_date,
+    account_id,
+    income_type="one_time",
+    status="confirmed",
+    note=None,
+):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    year_month = transaction_date[:7]
+
+    payload = {
+        "title": title,
+        "amount": amount,
+        "transaction_date": transaction_date,
+        "account_id": account_id,
+        "income_type": income_type,   # ✅ اضافه شد
+        "status": status,
+        "year_month": year_month,
+        "note": note,
+    }
+
+    res = (
+        supabase.table("income_transactions")
+        .update(payload)
+        .eq("id", tx_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def delete_income_transaction(tx_id):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    supabase.table("income_transactions") \
+        .update({"is_active": False}) \
+        .eq("id", tx_id) \
+        .eq("user_id", user.id) \
+        .execute()
+
+
+# --------------transaction------------
+def get_financial_summary(start_date, end_date):
+    user = get_current_user()
+    if not user:
+        return {
+            "balance": 0,
+            "income": 0,
+            "expense": 0,
+            "left": 0,
+        }
+
+    accounts = (
+        supabase.table("accounts")
+        .select("initial_balance")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+        .execute()
+        .data
+    ) or []
+
+    initial_balance = sum(
+        float(a.get("initial_balance") or 0)
+        for a in accounts
+    )
+
+    # ✅ درآمد از جدول جدید income_transactions
+    income_rows = (
+        supabase.table("income_transactions")
+        .select("amount")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+        .eq("status", "confirmed")
+        .gte("transaction_date", start_date)
+        .lte("transaction_date", end_date)
+        .execute()
+        .data
+    ) or []
+
+    income = sum(
+        float(r.get("amount") or 0)
+        for r in income_rows
+    )
+
+
+
+    today = date.today()
+    start_month = today.replace(day=1)
+
+    if today.month == 12:
+        next_month = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month = today.replace(month=today.month + 1, day=1)
+
+    cost_rows = (
+        supabase.table("cost")
+        .select("price")
+        .eq("user_id", user.id)
+        .gte("date_cost", start_month.isoformat())
+        .lt("date_cost", next_month.isoformat())   # 👈 بهتر از lte
+        .execute()
+        .data
+    ) or []
+
+    expense = sum(
+        float(r.get("price") or 0)
+        for r in cost_rows
+    )
+
+    balance = initial_balance + income - expense
+    left = income - expense
+
+    return {
+        "balance": balance,
+        "income": income,
+        "expense": expense,
+        "left": left,
+    }
+
+
+from datetime import date
+
+
+def carry_monthly_income_to_current_month():
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    current_ym = date.today().strftime("%Y-%m")
+    today_iso = date.today().isoformat()
+
+    monthly_rows = (
+        supabase.table("income_transactions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+        .eq("income_type", "monthly")
+        .neq("status", "cancelled")
+        .eq("carried_forward", False)
+        .execute()
+        .data
+    ) or []
+
+    created = []
+
+    for row in monthly_rows:
+        # جلوگیری از duplicate برای ماه جاری
+        exists = (
+            supabase.table("income_transactions")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("income_type", "monthly")
+            .eq("year_month", current_ym)
+            .eq("title", row.get("title"))
+            .eq("account_id", row.get("account_id"))
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+
+        if exists:
+            continue
+
+        payload = {
+            "user_id": user.id,
+            "title": row.get("title"),
+            "amount": row.get("amount"),
+            "transaction_date": today_iso,
+            "account_id": row.get("account_id"),
+            "income_type": "monthly",
+            "status": "pending",
+            "year_month": current_ym,
+            "note": row.get("note"),
+            "is_active": True,
+            "carried_forward": False,  # رکورد جدید هنوز برای ماه بعد منتقل نشده
+        }
+
+        res = supabase.table("income_transactions").insert(payload).execute()
+
+        if res.data:
+            created.append(res.data[0])
+
+            # رکورد قبلی تیک بخورد که منتقل شده
+            supabase.table("income_transactions").update({
+                "carried_forward": True,
+            }).eq("id", row["id"]).eq("user_id", user.id).execute()
+
+    return created
+
+# ---------- Budget --------------
+# ================= BUDGETS =================
+
+def get_month_start(date_text: str):
+    # input: "2026-04-15" or "2026-04"
+    if len(date_text) == 7:
+        return f"{date_text}-01"
+    return date_text[:7] + "-01"
+
+
+def get_budgets_by_month(year_month: str):
+    user = get_current_user()
+    if not user:
+        return []
+
+    period_start = get_month_start(year_month)
+
+    res = (
+        supabase.table("budgets")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("period_start", period_start)
+        .order("created_at")
+        .execute()
+    )
+
+    return res.data or []
+
+
+def get_budget_page_data(year_month: str):
+    """
+    برای صفحه بودجه:
+    - categories از hazineha
+    - budgets از budgets
+    - spent از cost
+    """
+
+    user = get_current_user()
+    if not user:
+        return {
+            "categories": [],
+            "budgets": [],
+            "costs": [],
+        }
+
+    period_start = get_month_start(year_month)
+
+    year = int(period_start[:4])
+    month = int(period_start[5:7])
+
+    start_date = date(year, month, 1)
+
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+
+    categories = load_active_hazineha()
+
+    budgets = (
+        supabase.table("budgets")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("period_start", period_start)
+        .execute()
+        .data
+    ) or []
+
+    costs = (
+        supabase.table("cost")
+        .select("id, price, id_hazine, date_cost")
+        .eq("user_id", user.id)
+        .gte("date_cost", start_date.isoformat())
+        .lt("date_cost", end_date.isoformat())
+        .execute()
+        .data
+    ) or []
+
+    return {
+        "categories": categories,
+        "budgets": budgets,
+        "costs": costs,
+    }
+
+
+def get_descendant_category_ids(categories, category_id):
+    result = [category_id]
+
+    children = [
+        c for c in categories
+        if c.get("id_parent") == category_id
+    ]
+
+    for child in children:
+        result.extend(
+            get_descendant_category_ids(categories, child["id"])
+        )
+
+    return result
+
+
+def get_ancestor_category_ids(categories, category_id):
+    result = []
+
+    current = next(
+        (c for c in categories if c.get("id") == category_id),
+        None
+    )
+
+    while current and current.get("id_parent"):
+        parent_id = current.get("id_parent")
+        result.append(parent_id)
+
+        current = next(
+            (c for c in categories if c.get("id") == parent_id),
+            None
+        )
+
+    return result
+
+
+def has_budget_conflict(category_id, year_month: str):
+    """
+    جلوگیری از این حالت:
+    مسکن budget داشته باشد
+    و تعمیرات هم budget جدا داشته باشد
+    """
+
+    categories = load_active_hazineha()
+    budgets = get_budgets_by_month(year_month)
+
+    budget_category_ids = {
+        b.get("category_id")
+        for b in budgets
+        if b.get("category_id")
+    }
+
+    ancestor_ids = set(
+        get_ancestor_category_ids(categories, category_id)
+    )
+
+    descendant_ids = set(
+        get_descendant_category_ids(categories, category_id)
+    )
+    descendant_ids.discard(category_id)
+
+    conflict_ids = ancestor_ids.union(descendant_ids)
+
+    for cid in conflict_ids:
+        if cid in budget_category_ids:
+            return True
+
+    return False
+
+
+def upsert_budget(category_id, amount, year_month: str):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    period_start = get_month_start(year_month)
+
+    if has_budget_conflict(category_id, year_month):
+        raise Exception("Budget conflict: parent or child already has budget")
+
+    payload = {
+        "user_id": user.id,
+        "category_id": category_id,
+        "amount": float(amount),
+        "period_type": "monthly",
+        "period_start": period_start,
+    }
+
+    res = (
+        supabase.table("budgets")
+        .upsert(
+            payload,
+            on_conflict="user_id,category_id,period_start"
+        )
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+
+def delete_budget(category_id, year_month: str):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    period_start = get_month_start(year_month)
+
+    supabase.table("budgets") \
+        .delete() \
+        .eq("user_id", user.id) \
+        .eq("category_id", category_id) \
+        .eq("period_start", period_start) \
+        .execute()
+
+
+def calculate_budget_spent(categories, costs, category_id):
+    category_ids = get_descendant_category_ids(categories, category_id)
+
+    total = 0
+
+    for row in costs:
+        if row.get("id_hazine") in category_ids:
+            total += float(row.get("price") or 0)
+
+    return total
+
+def carry_budgets_to_current_month():
+    user = get_current_user()
+    if not user:
+        return []
+
+    from datetime import date
+
+    today = date.today()
+    current_ym = today.strftime("%Y-%m")
+    current_start = f"{current_ym}-01"
+
+    # ماه قبل
+    if today.month == 1:
+        prev_year = today.year - 1
+        prev_month = 12
+    else:
+        prev_year = today.year
+        prev_month = today.month - 1
+
+    prev_ym = f"{prev_year}-{prev_month:02d}"
+    prev_start = f"{prev_ym}-01"
+
+    # گرفتن بودجه‌های ماه قبل
+    prev_budgets = (
+        supabase.table("budgets")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("period_start", prev_start)
+        .eq("carried_forward", False)
+        .execute()
+        .data
+    ) or []
+
+    created = []
+
+    for row in prev_budgets:
+        # جلوگیری از duplicate
+        exists = (
+            supabase.table("budgets")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("category_id", row["category_id"])
+            .eq("period_start", current_start)
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+
+        if exists:
+            continue
+
+        payload = {
+            "user_id": user.id,
+            "category_id": row["category_id"],
+            "amount": row["amount"],
+            "period_type": "monthly",
+            "period_start": current_start,
+            "carried_forward": False,
+        }
+
+        res = supabase.table("budgets").insert(payload).execute()
+
+        if res.data:
+            created.append(res.data[0])
+
+            # تیک بزن که منتقل شده
+            supabase.table("budgets").update({
+                "carried_forward": True
+            }).eq("id", row["id"]).eq("user_id", user.id).execute()
+
+    return created
+
+#  ---------- dashboard -----------
+
+
+
+def get_current_month_dashboard_data(year_month=None):
+    user = get_current_user()
+    if not user:
+        return None
+
+    today = date.today()
+
+    if not year_month:
+        year_month = today.strftime("%Y-%m")
+
+    year = int(year_month[:4])
+    month = int(year_month[5:7])
+
+    start_date = date(year, month, 1)
+    days_in_month = calendar.monthrange(year, month)[1]
+    end_date = date(year, month, days_in_month)
+
+    if year == today.year and month == today.month:
+        days_passed = today.day
+    else:
+        days_passed = days_in_month
+
+    # ---------- Income ----------
+    income_rows = (
+        supabase.table("income_transactions")
+        .select("amount")
+        .eq("user_id", user.id)
+        .eq("is_active", True)
+        .eq("status", "confirmed")
+        .eq("year_month", year_month)
+        .execute()
+        .data
+    ) or []
+
+    total_income = sum(float(r.get("amount") or 0) for r in income_rows)
+
+    # ---------- Costs ----------
+    cost_rows = (
+        supabase.table("cost")
+        .select("id,title,price,date_cost,id_hazine")
+        .eq("user_id", user.id)
+        .gte("date_cost", start_date.isoformat())
+        .lte("date_cost", end_date.isoformat())
+        .execute()
+        .data
+    ) or []
+
+    total_expense = sum(float(r.get("price") or 0) for r in cost_rows)
+    balance = total_income - total_expense
+
+    # ---------- Previous month ----------
+    if month == 1:
+        prev_year = year - 1
+        prev_month = 12
+    else:
+        prev_year = year
+        prev_month = month - 1
+
+    prev_ym = f"{prev_year}-{prev_month:02d}"
+    prev_start = date(prev_year, prev_month, 1)
+    prev_days = calendar.monthrange(prev_year, prev_month)[1]
+    prev_end = date(prev_year, prev_month, prev_days)
+
+    prev_cost_rows = (
+        supabase.table("cost")
+        .select("price")
+        .eq("user_id", user.id)
+        .gte("date_cost", prev_start.isoformat())
+        .lte("date_cost", prev_end.isoformat())
+        .execute()
+        .data
+    ) or []
+
+    previous_expense = sum(float(r.get("price") or 0) for r in prev_cost_rows)
+    expense_vs_last_month = total_expense - previous_expense
+
+    # ---------- Budget ----------
+    budget_data = get_budget_page_data(year_month)
+    categories = budget_data["categories"]
+    budgets = budget_data["budgets"]
+    costs_for_budget = budget_data["costs"]
+
+    budget_total = sum(float(b.get("amount") or 0) for b in budgets)
+
+    budget_used_percent = (
+        total_expense / budget_total
+        if budget_total > 0
+        else 0
+    )
+
+    income_used_percent = (
+        total_expense / total_income
+        if total_income > 0
+        else 0
+    )
+
+    # ---------- Category spending ----------
+    category_map = {
+        c["id"]: c.get("title") or ""
+        for c in categories
+    }
+
+    category_spending = defaultdict(float)
+
+    for row in cost_rows:
+        category_id = row.get("id_hazine")
+        if category_id:
+            category_spending[category_id] += float(row.get("price") or 0)
+
+    # ---------- Over budget ----------
+    over_budget_items = []
+
+    for b in budgets:
+        category_id = b.get("category_id")
+        amount = float(b.get("amount") or 0)
+        spent = calculate_budget_spent(
+            categories,
+            costs_for_budget,
+            category_id,
+        )
+
+        if amount > 0 and spent > amount:
+            over_budget_items.append({
+                "category_id": category_id,
+                "category": category_map.get(category_id, "Unknown"),
+                "budget": amount,
+                "spent": spent,
+                "over_amount": spent - amount,
+            })
+
+    over_budget_items.sort(
+        key=lambda x: x["over_amount"],
+        reverse=True,
+    )
+
+    # ---------- Biggest expense ----------
+    biggest_expense = None
+    if cost_rows:
+        biggest_row = max(
+            cost_rows,
+            key=lambda r: float(r.get("price") or 0)
+        )
+        biggest_expense = {
+            "title": biggest_row.get("title") or "",
+            "amount": float(biggest_row.get("price") or 0),
+            "category": category_map.get(biggest_row.get("id_hazine"), ""),
+        }
+
+    # ---------- Forecast ----------
+    avg_daily_spending = (
+        total_expense / days_passed
+        if days_passed > 0
+        else 0
+    )
+
+    projected_end_month_expense = avg_daily_spending * days_in_month
+
+    # ---------- Quick insights ----------
+    insights = []
+
+    if over_budget_items:
+        item = over_budget_items[0]
+        insights.append(
+            f"⚠️ {item['category']} +{item['over_amount']:,.0f} over budget"
+        )
+
+    if expense_vs_last_month > 0:
+        insights.append(
+            f"📈 +{expense_vs_last_month:,.0f} vs last month"
+        )
+    elif expense_vs_last_month < 0:
+        insights.append(
+            f"📉 {abs(expense_vs_last_month):,.0f} less than last month"
+        )
+
+    if biggest_expense:
+        insights.append(
+            f"💸 {biggest_expense['title']} = biggest expense"
+        )
+
+    return {
+        "month": year_month,
+        "total_income": total_income,
+        "total_expense": total_expense,
+        "balance": balance,
+
+        "budget_total": budget_total,
+        "budget_used_percent": budget_used_percent,
+        "income_used_percent": income_used_percent,
+
+        "days_passed": days_passed,
+        "days_in_month": days_in_month,
+
+        "avg_daily_spending": avg_daily_spending,
+        "projected_end_month_expense": projected_end_month_expense,
+
+        "previous_month": prev_ym,
+        "previous_expense": previous_expense,
+        "expense_vs_last_month": expense_vs_last_month,
+
+        "over_budget_categories": over_budget_items[:3],
+        "biggest_expense": biggest_expense,
+        "insights": insights[:3],
+    }

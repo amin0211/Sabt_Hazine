@@ -51,6 +51,12 @@ from ui.profile_view import profile_view
 
 from services.auth_session import restore_session_from_storage
 from ui.members_view import members_view
+from ui.accounts_view import accounts_view
+from ui.income_view import income_view
+from ui.budget_view import budget_view
+from ui.dashboard_view import dashboard_view
+
+
 
 
 APP_BG = "#F5F7FB"
@@ -157,6 +163,9 @@ def main(page: ft.Page):
             page.go("/login")
             return
 
+
+
+        
         if page.route == "/login":
             if logged_in:
                 page.go("/sabtehazine")
@@ -185,6 +194,20 @@ def main(page: ft.Page):
 
         elif page.route == "/members":
             page.views.append(members_view(page))
+
+        elif page.route == "/accounts":
+            page.views.append(accounts_view(page))
+
+
+        elif page.route == "/income":
+            page.views.append(income_view(page))
+
+        elif page.route == "/budget_view":
+            page.views.append(budget_view(page))
+
+        elif page.route == "/dashboard_view":
+            page.views.append(dashboard_view(page))
+
 
         elif page.route == "/sabtehazine":
             view = build_chat_ui(

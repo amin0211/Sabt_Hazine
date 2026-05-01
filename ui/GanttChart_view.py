@@ -188,12 +188,28 @@ def GanttChart_view(page: ft.Page, theme):
             current = nodes.get(current.parent_id)
 
         parts.reverse()
-        
-        # parts = parts[1:]
-        if parts and parts[0] == "طبقه بندی هزینه ها":
-            parts = parts[1:]
 
-        return " / ".join(parts)
+        # حذف تمام سطح اول‌ها (هر نودی که parent نداره)
+        filtered = []
+
+        for i, title in enumerate(parts):
+            node = nodes.get(parent_id)
+        
+        current = nodes.get(parent_id)
+        stack = []
+
+        while current:
+            stack.append(current)
+            current = nodes.get(current.parent_id)
+
+        stack.reverse()
+
+        filtered = [
+            n.title for n in stack
+            if n.parent_id not in (None, 0)
+        ]
+
+        return " / ".join(filtered)
 
     def build_tree(data):
         nodes = {}
@@ -265,26 +281,29 @@ def GanttChart_view(page: ft.Page, theme):
                         "title": node.title,
                         "value": node.total,
                         "has_children": len(node.children) > 0,
+                        "parent_id": node.parent_id,
                     }
                 )
 
         return result, nodes
 
-
     def handle_item_click(item_index, data):
         if item_index is None:
             return
+
         if item_index < 0 or item_index >= len(data):
             return
 
         item = data[item_index]
+
         if not item.get("has_children"):
             return
 
         current_parent_id["value"] = item["id"]
         path_stack.append(item["id"])
-        render_chart()
 
+        render_chart()
+          
     def build_pie_chart(data):
         total = sum(item["value"] for item in data) or 1
 
