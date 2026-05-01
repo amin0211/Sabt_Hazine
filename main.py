@@ -30,7 +30,9 @@
 # adb shell pm list packages | findstr com.flet.sabte_hazine
 
 import flet as ft
+from flet import AppView
 import asyncio
+import os
 
 from ui.sabte_hazine_ui import build_chat_ui
 import controllers.sabte_hazine_controller as controller
@@ -236,5 +238,16 @@ def main(page: ft.Page):
     page.on_route_change = route_change
     page.run_task(go_start)
 
+    page.title = "Sabt Hazineha"
+    page.add(ft.Text("Hello from Web"))
 
-ft.app(target=main)
+
+port = int(os.environ.get("PORT", 8000))
+
+ft.app(
+    target=main,
+    view=AppView.WEB_BROWSER,
+    port=port,
+)
+
+# ft.app(target=main)
