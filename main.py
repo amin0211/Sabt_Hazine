@@ -261,7 +261,7 @@ def main(page: ft.Page):
 
 def main(page: ft.Page):
     page.title = "Sabt Hazineha"
-    page.add(ft.Text("App is running..."))
+    # page.add(ft.Text("App is running..."))
 
 ft.app(
     target=main,
