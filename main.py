@@ -261,13 +261,16 @@ def main(page: ft.Page):
 
 def main(page: ft.Page):
     page.title = "Sabt Hazineha"
-    # page.add(ft.Text("App is running..."))
+    print("MAIN STARTED")
+    page.title = "Sabt Hazineha"
+    page.add(ft.Text("Loading main app..."))
+    page.update()
 
-ft.app(
-    target=main,
-    view=ft.AppView.WEB_BROWSER,
-    port=int(os.environ.get("PORT", 8080))
-)
+# ft.app(
+#     target=main,
+#     view=ft.AppView.WEB_BROWSER,
+#     port=int(os.environ.get("PORT", 8080))
+# )
 
 
 # port = int(os.environ.get("PORT", 8000))
