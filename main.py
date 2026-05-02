@@ -258,19 +258,27 @@ def main(page: ft.Page):
     # page.add(ft.Text("Hello from Web"))
 
 
-
 def main(page: ft.Page):
-    # print("MAIN STARTED")
-    page.title = "Sabt Hazineha"
-    # page.add(ft.Text("Loading main app..."))
-    # page.update()
+    print("STEP 1", flush=True)
 
-ft.app(
-    target=main,
-    view=ft.AppView.WEB_BROWSER,
-    host="0.0.0.0",
-    port=int(os.environ.get("PORT", 8080))
-)
+    page.title = "Sabt Hazineha"
+    page.add(ft.Text("Loading main app..."))
+    page.update()
+
+    print("STEP 2", flush=True)
+
+    # 👇 اینجا کدهای اصلیتو بذار
+
+# def main(page: ft.Page):
+#     page.title = "Sabt Hazineha"
+#     # page.add(ft.Text("Loading main app..."))
+
+# ft.app(
+#     target=main,
+#     view=ft.AppView.WEB_BROWSER,
+#     host="0.0.0.0",
+#     port=int(os.environ.get("PORT", 8080))
+# )
 
 
 # port = int(os.environ.get("PORT", 8000))
