@@ -258,13 +258,25 @@ def main(page: ft.Page):
     # page.add(ft.Text("Hello from Web"))
 
 
-port = int(os.environ.get("PORT", 8000))
+
+def main(page: ft.Page):
+    page.title = "Sabt Hazineha"
+    page.add(ft.Text("App is running..."))
 
 ft.app(
     target=main,
-    view=AppView.WEB_BROWSER,
-    host="0.0.0.0",
-    port=port,
+    view=ft.AppView.WEB_BROWSER,
+    port=int(os.environ.get("PORT", 8080))
 )
+
+
+# port = int(os.environ.get("PORT", 8000))
+
+# ft.app(
+#     target=main,
+#     view=AppView.WEB_BROWSER,
+#     host="0.0.0.0",
+#     port=port,
+# )
 
 # ft.app(target=main)
