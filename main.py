@@ -263,7 +263,7 @@ def main(page: ft.Page):
 
     page.title = "Sabt Hazineha"
     page.add(ft.Text("Loading main app..."))
-    page.update()
+    # page.update()
 
     print("STEP 2", flush=True)
 
