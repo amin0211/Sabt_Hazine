@@ -262,7 +262,7 @@ def main(page: ft.Page):
 def main(page: ft.Page):
     # print("MAIN STARTED")
     page.title = "Sabt Hazineha"
-    page.add(ft.Text("Loading main app..."))
+    # page.add(ft.Text("Loading main app..."))
     # page.update()
 
 ft.app(
