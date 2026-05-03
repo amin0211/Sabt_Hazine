@@ -270,18 +270,18 @@ def main(page: ft.Page):
 
 
     # async def go_start():
-        page.data = page.data or {}
-        # await page.shared_preferences.remove("last_view")
-        user = await restore_session_from_storage(page)
-        page.data["user"] = user
+        # page.data = page.data or {}
+        # # await page.shared_preferences.remove("last_view")
+        # user = await restore_session_from_storage(page)
+        # page.data["user"] = user
 
-        if user:
-            await apply_user_language()
+        # if user:
+        #     await apply_user_language()
             
-            await render_view("sabtehazine")
-        else:
-            page.data["lang"] = "fa"
-            await render_view("login")
+        #     await render_view("sabtehazine")
+        # else:
+        #     page.data["lang"] = "fa"
+        #     await render_view("login")
 
     async def go_start():
         try:
