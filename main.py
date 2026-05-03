@@ -132,8 +132,10 @@ def main(page: ft.Page):
         view.bgcolor = APP_BG
         return view
 
+
     async def render_view(view_name: str):
         print("RENDER_VIEW:", view_name, flush=True)
+
         page.views.clear()
         page.data = page.data or {}
         page.data["current_view"] = view_name
@@ -158,18 +160,12 @@ def main(page: ft.Page):
         if view_name in protected_views and not logged_in:
             view_name = "login"
 
-        # if logged_in and view_name in protected_views:
-        #     await page.shared_preferences.set("last_view", view_name)
-
         if view_name == "login":
-            if logged_in:
-                view_name = "sabtehazine"
-            else:
-                view = login_view(page)
-                view.route = "/"
-                page.views.append(apply_bg(view))
+            view = login_view(page)
+            view.route = "/"
+            page.views.append(apply_bg(view))
 
-        if view_name == "register":
+        elif view_name == "register":
             view = register_view(page)
             view.route = "/"
             page.views.append(apply_bg(view))
@@ -192,44 +188,32 @@ def main(page: ft.Page):
         elif view_name == "members":
             view = members_view(page)
             view.route = "/"
-            page.views.append(view)
+            page.views.append(apply_bg(view))
 
         elif view_name == "accounts":
             view = accounts_view(page)
             view.route = "/"
-            page.views.append(view)
+            page.views.append(apply_bg(view))
 
         elif view_name == "income":
             view = income_view(page)
             view.route = "/"
-            page.views.append(view)
+            page.views.append(apply_bg(view))
 
         elif view_name == "budget_view":
             view = budget_view(page)
             view.route = "/"
-            page.views.append(view)
+            page.views.append(apply_bg(view))
 
         elif view_name == "trend_view":
             view = trend_view(page)
             view.route = "/"
-            page.views.append(view)
+            page.views.append(apply_bg(view))
 
         elif view_name == "dashboard_view":
             view = dashboard_view(page)
             view.route = "/"
-            page.views.append(view)
-
-        # elif view_name == "sabtehazine":
-        #     view = build_chat_ui(
-        #         page=page,
-        #         supabase_service=supabase_service,
-        #         controller=controller,
-        #         parse_expense_=parse_expense,
-        #         normalize_date=normalize_date,
-        #         theme=theme,
-        #     )
-        #     view.route = "/"
-        #     page.views.append(apply_bg(view))
+            page.views.append(apply_bg(view))
 
         elif view_name == "sabtehazine":
             if page.data.get("sabtehazine_changed") or "sabtehazine_view_cache" not in page.data:
@@ -247,21 +231,37 @@ def main(page: ft.Page):
             else:
                 view = page.data["sabtehazine_view_cache"]
 
+            view.route = "/"
             page.views.append(view)
 
         elif view_name == "GanttChart_view":
             view = GanttChart_view(page, theme)
-            # view.route = "/"
+            view.route = "/"
             page.views.append(apply_bg(view))
 
         else:
-            page.views.append(ft.View(route="/", controls=[ft.Text("404 Page")]))
+            page.views.append(
+                ft.View(
+                    route="/",
+                    controls=[
+                        ft.Text("404 Page"),
+                        ft.ElevatedButton(
+                            "Go Login",
+                            on_click=lambda e: page.app_go("login"),
+                        ),
+                    ],
+                    bgcolor=APP_BG,
+                )
+            )
 
         print("VIEWS COUNT:", len(page.views), flush=True)
-        print("CONTROLS COUNT:", len(page.views[0].controls), flush=True)
-        
+        print(
+            "CONTROLS COUNT:",
+            len(page.views[0].controls) if page.views else 0,
+            flush=True,
+        )
+
         page.update()
-    
 
     async def app_go(view_name: str):
         page.data = page.data or {}
