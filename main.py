@@ -133,6 +133,7 @@ def main(page: ft.Page):
         return view
 
     async def render_view(view_name: str):
+        print("RENDER_VIEW:", view_name, flush=True)
         page.views.clear()
         page.data = page.data or {}
         page.data["current_view"] = view_name
@@ -269,24 +270,6 @@ def main(page: ft.Page):
 
 
     # async def go_start():
-    #     page.data = page.data or {}
-
-    #     user = await restore_session_from_storage(page)
-    #     page.data["user"] = user
-
-    #     if user:
-    #         await apply_user_language()
-
-    #         last_route = await page.shared_preferences.get("last_route")
-    #         if last_route and last_route not in ["/login", "/register"]:
-    #             page.go(last_route)
-    #         else:
-    #             page.go("/sabtehazine")
-    #     else:
-    #         page.data["lang"] = "fa"
-    #         page.go("/login")
-
-    async def go_start():
         page.data = page.data or {}
         # await page.shared_preferences.remove("last_view")
         user = await restore_session_from_storage(page)
@@ -300,7 +283,33 @@ def main(page: ft.Page):
             page.data["lang"] = "fa"
             await render_view("login")
 
+    async def go_start():
+        try:
+            print("GO_START STARTED", flush=True)
 
+            page.data = page.data or {}
+
+            user = await restore_session_from_storage(page)
+            print("USER:", bool(user), flush=True)
+
+            page.data["user"] = user
+
+            if user:
+                await apply_user_language()
+                await render_view("sabtehazine")
+            else:
+                page.data["lang"] = "fa"
+                await render_view("login")
+
+            print("GO_START FINISHED", flush=True)
+
+        except Exception as ex:
+            print("GO_START ERROR:", ex, flush=True)
+            page.data = page.data or {}
+            page.data["user"] = None
+            page.data["lang"] = "fa"
+            await render_view("login")
+            
     # async def handle_route_change(e):
     #     page.views.clear()
 
