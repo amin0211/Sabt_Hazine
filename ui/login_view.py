@@ -72,7 +72,7 @@ def login_view(page: ft.Page):
     password.on_submit = login
 
     return ft.View(
-        route="/login",
+        route="/",
         controls=[
             ft.Container(height=30),
             ft.Text("Login", size=28, weight=ft.FontWeight.BOLD),

@@ -251,12 +251,15 @@ def main(page: ft.Page):
 
         elif view_name == "GanttChart_view":
             view = GanttChart_view(page, theme)
-            view.route = "/"
+            # view.route = "/"
             page.views.append(apply_bg(view))
 
         else:
             page.views.append(ft.View(route="/", controls=[ft.Text("404 Page")]))
 
+        print("VIEWS COUNT:", len(page.views), flush=True)
+        print("CONTROLS COUNT:", len(page.views[0].controls), flush=True)
+        
         page.update()
     
 
