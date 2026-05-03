@@ -57,6 +57,7 @@ from ui.accounts_view import accounts_view
 from ui.income_view import income_view
 from ui.budget_view import budget_view
 from ui.dashboard_view import dashboard_view
+from ui.trend_view import trend_view
 
 
 
@@ -132,25 +133,35 @@ def main(page: ft.Page):
         return view
 
     async def go_start():
-        user = await restore_session_from_storage(page)
-
         page.data = page.data or {}
+
+        user = await restore_session_from_storage(page)
+        page.data["user"] = user
 
         if user:
             await apply_user_language()
-            page.go("/sabtehazine")
+
+            last_route = await page.shared_preferences.get("last_route")
+            if last_route and last_route not in ["/login", "/register"]:
+                page.go(last_route)
+            else:
+                page.go("/sabtehazine")
         else:
             page.data["lang"] = "fa"
-            # page.rtl = True
             page.go("/login")
- 
- 
+
+
+
     async def handle_route_change(e):
         page.views.clear()
 
-        user = await restore_session_from_storage(page)
+        # user = await restore_session_from_storage(page)
+        # logged_in = user is not None
+
+
+        user = page.data.get("user")
         logged_in = user is not None
-        
+
         page.data = page.data or {}
 
         if logged_in:
@@ -171,12 +182,15 @@ def main(page: ft.Page):
             "/income",
             "/budget_view",
             "/dashboard_view",
+            "/trend_view",
         ]
 
         if page.route in protected_routes and not logged_in:
             page.go("/login")
             return
-
+        
+        if logged_in and page.route in protected_routes:
+            await page.shared_preferences.set("last_route", page.route)
 
 
         
@@ -220,8 +234,8 @@ def main(page: ft.Page):
             page.views.clear()
             page.views.append(budget_view(page))
 
-        # elif page.route == "/budget_view":
-        #     page.views.append(budget_view(page))
+        elif page.route == "/trend_view":
+            page.views.append(trend_view(page))
 
         elif page.route == "/dashboard_view":
             page.views.append(dashboard_view(page))
@@ -259,11 +273,11 @@ def main(page: ft.Page):
 
 
     
-ft.app(
-    target=main,
-    view=ft.AppView.WEB_BROWSER,
-    host="0.0.0.0",
-    port=int(os.environ.get("PORT", 8080))
-)
+# ft.app(
+#     target=main,
+#     view=ft.AppView.WEB_BROWSER,
+#     host="0.0.0.0",
+#     port=int(os.environ.get("PORT", 8080))
+# )
 
-# ft.app(target=main)
+ft.app(target=main)

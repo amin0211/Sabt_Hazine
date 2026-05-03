@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "flet==0.84.0",
     "flet-charts==0.84.0",
-
+    "tzdata",
     "requests>=2.30.0",
     "python-dotenv>=1.0.0",
     "flask>=3.0.0",

@@ -271,6 +271,7 @@ def open_edit_cost_dialog(
         page.data["reopen_edit_cost_dialog"] = True
         page.data["edit_cost_row"] = row
 
+        page.data["from"] = "edit_cost_dialog"
         page.go("/hazinaha_view")
     
         # page.data["category_picker_return_route"] = "/edit_cost"

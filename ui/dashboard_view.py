@@ -268,7 +268,7 @@ def dashboard_view(page: ft.Page):
                         ),
                         ft.ElevatedButton(
                             content=ft.Text("Trends"),
-                            on_click=lambda e: page.go("/trend_report"),
+                            on_click=lambda e: page.go("/trend_view"),
                         ),
                     ],
                     spacing=8,

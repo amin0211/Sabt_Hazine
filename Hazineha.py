@@ -79,10 +79,19 @@ def hazinaha_view(page: ft.Page):
 
     picker_mode = page.data.get("category_picker_mode", False)
     current_category_id = page.data.get("category_picker_current_id")
+    
+    without_edit = page.data.get("without_edit") == True
 
     def get_from_route():
         if page.data.get("from") == "dashboard_view":
             return "/dashboard_view"
+
+
+        if page.data.get("from") == "trend_view":
+            return "/trend_view"
+        
+        # if page.data.get("from") == "edit_cost_dialog":
+        #     return "/edit_cost_dialog"
 
         return "/sabtehazine"
 
@@ -109,6 +118,7 @@ def hazinaha_view(page: ft.Page):
 
         if isinstance(page.data, dict):
             callback = page.data.pop("category_picker_on_selected", None)
+            page.data.pop("without_edit", None)
             page.data.pop("category_picker_mode", None)
             page.data.pop("category_picker_current_id", None)
 
@@ -118,7 +128,10 @@ def hazinaha_view(page: ft.Page):
                 "category_title": selected_node.name,
             })
 
-        page.go("/sabtehazine")
+        if page.data.get("reopen_edit_cost_dialog"):
+            page.go("/sabtehazine")  # موقت
+        else:
+            page.go(get_from_route())
         
 
     def safe_update():
@@ -334,6 +347,8 @@ def hazinaha_view(page: ft.Page):
         rebuild_tree(update_page=False)
 
     def delete_node(parent, child, e=None):
+        if without_edit:
+            return
         if parent:
             if child.children:
                 return
@@ -361,6 +376,8 @@ def hazinaha_view(page: ft.Page):
         
 
     def start_adding_child(node, e=None):
+        if without_edit:
+            return
         node.adding_child = True
         node.expanded = True
         selected_id["value"] = node.id
@@ -519,16 +536,19 @@ def hazinaha_view(page: ft.Page):
         else:
             delete_btn = ft.Container(width=24)
 
-        actions_row = ft.Row(
-            [delete_btn, add_btn],
-            spacing=0,
-            tight=True,
-        )
-
-        if not is_selected:
+        if without_edit:
             actions_row = ft.Container(width=0)
+        else:
+            actions_row = ft.Row(
+                [delete_btn, add_btn],
+                spacing=0,
+                tight=True,
+            )
 
-        if is_selected:
+            if not is_selected:
+                actions_row = ft.Container(width=0)
+
+        if is_selected and not without_edit:
             edit_input = ft.TextField(
                 value=node.name,
                 expand=True,
