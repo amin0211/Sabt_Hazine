@@ -42,14 +42,20 @@ def budget_view(page: ft.Page, year_month: str | None = None):
 
     expanded_nodes = {"ids": set()}
 
-    def get_from_route():
+    # def get_from_route():
+    #     if page.data.get("from") == "dashboard_view":
+    #         return "/dashboard_view"
+
+    #     return "/sabtehazine"
+
+    def get_from_view():
         if page.data.get("from") == "dashboard_view":
-            return "/dashboard_view"
+            return "dashboard_view"
 
-        return "/sabtehazine"
-
+        return "sabtehazine"
+    
     def go_back(e):
-        page.go(get_from_route())   # یا هر صفحه‌ای که می‌خوای برگرده
+        page.app_go(get_from_view())   # یا هر صفحه‌ای که می‌خوای برگرده
 
     def is_expanded(category_id):
         return category_id in expanded_nodes["ids"]

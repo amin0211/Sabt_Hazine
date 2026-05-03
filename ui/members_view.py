@@ -4,7 +4,7 @@ from services.i18n import t
 
 def members_view(page: ft.Page):
     def close_page():
-        page.go("/sabtehazine")
+        page.app_go("sabtehazine")
 
     shared = build_member_manager_content(
         page=page,

@@ -53,20 +53,17 @@ def login_view(page: ft.Page):
             await page.shared_preferences.set("user_id", user.id)
             await page.shared_preferences.set("user_email", user.email or "")
 
-            print("aa  5")
             if profile:
                 await page.shared_preferences.set("username", profile.get("username", ""))
                 await page.shared_preferences.set("name", profile.get("name", ""))
                 await page.shared_preferences.set("family", profile.get("family", ""))
 
-            print("aa  6")
             show_message("Login successful.", ft.Colors.GREEN_400)
-            print("aa  7")
-            page.go("/sabtehazine")
-            print("aa  8")
+            # page.app_go("sabtehazine")
+            page.data["user"] = user   
+            page.app_go("sabtehazine") 
 
         except Exception as ex:
-            print(f"111 = {ex}")
             show_message(f"Error: {ex}")
 
     def login(e):
@@ -86,7 +83,7 @@ def login_view(page: ft.Page):
             status_text,
             ft.Container(height=10),
             ft.ElevatedButton("Login", on_click=login, width=320),
-            ft.TextButton("Register", on_click=lambda e: page.go("/register")),
+            ft.TextButton("Register", on_click=lambda e: page.app_go("register")),
         ],
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )

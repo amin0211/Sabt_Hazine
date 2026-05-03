@@ -132,140 +132,290 @@ def main(page: ft.Page):
         view.bgcolor = APP_BG
         return view
 
-    async def go_start():
-        page.data = page.data or {}
-
-        user = await restore_session_from_storage(page)
-        page.data["user"] = user
-
-        if user:
-            await apply_user_language()
-
-            last_route = await page.shared_preferences.get("last_route")
-            if last_route and last_route not in ["/login", "/register"]:
-                page.go(last_route)
-            else:
-                page.go("/sabtehazine")
-        else:
-            page.data["lang"] = "fa"
-            page.go("/login")
-
-
-
-    async def handle_route_change(e):
+    async def render_view(view_name: str):
         page.views.clear()
-
-        # user = await restore_session_from_storage(page)
-        # logged_in = user is not None
-
+        page.data = page.data or {}
+        page.data["current_view"] = view_name
 
         user = page.data.get("user")
         logged_in = user is not None
 
-        page.data = page.data or {}
-
-        if logged_in:
-            await apply_user_language()
-        else:
-            saved_lang = await page.shared_preferences.get("lang")
-            page.data["lang"] = saved_lang or page.data.get("lang", "fa")
-
-
-        protected_routes = [
-            "/main",
-            "/sabtehazine",
-            "/hazinaha_view",
-            "/GanttChart_view",
-            "/members",
-            "/profile",
-            "/accounts",
-            "/income",
-            "/budget_view",
-            "/dashboard_view",
-            "/trend_view",
+        protected_views = [
+            "main",
+            "sabtehazine",
+            "hazinaha_view",
+            "GanttChart_view",
+            "members",
+            "profile",
+            "accounts",
+            "income",
+            "budget_view",
+            "dashboard_view",
+            "trend_view",
         ]
 
-        if page.route in protected_routes and not logged_in:
-            page.go("/login")
-            return
-        
-        if logged_in and page.route in protected_routes:
-            await page.shared_preferences.set("last_route", page.route)
+        if view_name in protected_views and not logged_in:
+            view_name = "login"
 
+        # if logged_in and view_name in protected_views:
+        #     await page.shared_preferences.set("last_view", view_name)
 
-        
-        if page.route == "/login":
+        if view_name == "login":
             if logged_in:
-                page.go("/sabtehazine")
-                return
-            view = login_view(page)
-            view.route = "/login"
-            page.views.append(apply_bg(view))
+                view_name = "sabtehazine"
+            else:
+                view = login_view(page)
+                view.route = "/"
+                page.views.append(apply_bg(view))
 
-        elif page.route == "/register":
+        if view_name == "register":
             view = register_view(page)
-            view.route = "/register"
+            view.route = "/"
             page.views.append(apply_bg(view))
 
-        elif page.route == "/profile":
+        elif view_name == "profile":
             view = profile_view(page)
-            view.route = "/profile"
+            view.route = "/"
             page.views.append(apply_bg(view))
-                    
-        elif page.route == "/main":
+
+        elif view_name == "main":
             view = main_view(page, theme)
+            view.route = "/"
             page.views.append(apply_bg(view))
 
-        elif page.route == "/hazinaha_view":
+        elif view_name == "hazinaha_view":
             view = hazinaha_view(page)
+            view.route = "/"
             page.views.append(apply_bg(view))
 
-        elif page.route == "/members":
-            page.views.append(members_view(page))
+        elif view_name == "members":
+            view = members_view(page)
+            view.route = "/"
+            page.views.append(view)
 
-        elif page.route == "/accounts":
-            page.views.append(accounts_view(page))
+        elif view_name == "accounts":
+            view = accounts_view(page)
+            view.route = "/"
+            page.views.append(view)
 
+        elif view_name == "income":
+            view = income_view(page)
+            view.route = "/"
+            page.views.append(view)
 
-        elif page.route == "/income":
-            page.views.append(income_view(page))
+        elif view_name == "budget_view":
+            view = budget_view(page)
+            view.route = "/"
+            page.views.append(view)
 
-        elif page.route == "/budget_view":
-            page.views.clear()
-            page.views.append(budget_view(page))
+        elif view_name == "trend_view":
+            view = trend_view(page)
+            view.route = "/"
+            page.views.append(view)
 
-        elif page.route == "/trend_view":
-            page.views.append(trend_view(page))
+        elif view_name == "dashboard_view":
+            view = dashboard_view(page)
+            view.route = "/"
+            page.views.append(view)
 
-        elif page.route == "/dashboard_view":
-            page.views.append(dashboard_view(page))
+        # elif view_name == "sabtehazine":
+        #     view = build_chat_ui(
+        #         page=page,
+        #         supabase_service=supabase_service,
+        #         controller=controller,
+        #         parse_expense_=parse_expense,
+        #         normalize_date=normalize_date,
+        #         theme=theme,
+        #     )
+        #     view.route = "/"
+        #     page.views.append(apply_bg(view))
 
+        elif view_name == "sabtehazine":
+            if page.data.get("sabtehazine_changed") or "sabtehazine_view_cache" not in page.data:
+                view = build_chat_ui(
+                    page=page,
+                    supabase_service=supabase_service,
+                    controller=controller,
+                    parse_expense_=parse_expense,
+                    normalize_date=normalize_date,
+                    theme=theme,
+                )
+                view.route = "/"
+                page.data["sabtehazine_view_cache"] = apply_bg(view)
+                page.data["sabtehazine_changed"] = False
+            else:
+                view = page.data["sabtehazine_view_cache"]
 
-        elif page.route == "/sabtehazine":
-            view = build_chat_ui(
-                page=page,
-                supabase_service=supabase_service,
-                controller=controller,
-                parse_expense_=parse_expense,
-                normalize_date=normalize_date,
-                theme=theme,
-            )
-            view.route = "/sabtehazine"
-            page.views.append(apply_bg(view))
+            page.views.append(view)
 
-        elif page.route == "/GanttChart_view":
+        elif view_name == "GanttChart_view":
             view = GanttChart_view(page, theme)
+            view.route = "/"
             page.views.append(apply_bg(view))
 
         else:
             page.views.append(ft.View(route="/", controls=[ft.Text("404 Page")]))
 
         page.update()
+    
 
-    def route_change(e):
-        page.run_task(handle_route_change, e)
+    async def app_go(view_name: str):
+        page.data = page.data or {}
+        page.data["current_view"] = view_name
+        # await page.shared_preferences.set("last_view", view_name)
+        await render_view(view_name)
 
-    page.on_route_change = route_change
+    page.app_go = lambda view_name: page.run_task(app_go, view_name)
+
+
+    # async def go_start():
+    #     page.data = page.data or {}
+
+    #     user = await restore_session_from_storage(page)
+    #     page.data["user"] = user
+
+    #     if user:
+    #         await apply_user_language()
+
+    #         last_route = await page.shared_preferences.get("last_route")
+    #         if last_route and last_route not in ["/login", "/register"]:
+    #             page.go(last_route)
+    #         else:
+    #             page.go("/sabtehazine")
+    #     else:
+    #         page.data["lang"] = "fa"
+    #         page.go("/login")
+
+    async def go_start():
+        page.data = page.data or {}
+        # await page.shared_preferences.remove("last_view")
+        user = await restore_session_from_storage(page)
+        page.data["user"] = user
+
+        if user:
+            await apply_user_language()
+            
+            await render_view("sabtehazine")
+        else:
+            page.data["lang"] = "fa"
+            await render_view("login")
+
+
+    # async def handle_route_change(e):
+    #     page.views.clear()
+
+    #     # user = await restore_session_from_storage(page)
+    #     # logged_in = user is not None
+
+
+    #     user = page.data.get("user")
+    #     logged_in = user is not None
+
+    #     page.data = page.data or {}
+
+    #     if logged_in:
+    #         await apply_user_language()
+    #     else:
+    #         saved_lang = await page.shared_preferences.get("lang")
+    #         page.data["lang"] = saved_lang or page.data.get("lang", "fa")
+
+
+    #     protected_routes = [
+    #         "/main",
+    #         "/sabtehazine",
+    #         "/hazinaha_view",
+    #         "/GanttChart_view",
+    #         "/members",
+    #         "/profile",
+    #         "/accounts",
+    #         "/income",
+    #         "/budget_view",
+    #         "/dashboard_view",
+    #         "/trend_view",
+    #     ]
+
+    #     if page.route in protected_routes and not logged_in:
+    #         page.go("/login")
+    #         return
+        
+    #     if logged_in and page.route in protected_routes:
+    #         await page.shared_preferences.set("last_route", page.route)
+
+
+        
+    #     if page.route == "/login":
+    #         if logged_in:
+    #             page.go("/sabtehazine")
+    #             return
+    #         view = login_view(page)
+    #         view.route = "/login"
+    #         page.views.append(apply_bg(view))
+
+    #     elif page.route == "/register":
+    #         view = register_view(page)
+    #         view.route = "/register"
+    #         page.views.append(apply_bg(view))
+
+    #     elif page.route == "/profile":
+    #         view = profile_view(page)
+    #         view.route = "/profile"
+    #         page.views.append(apply_bg(view))
+                    
+    #     elif page.route == "/main":
+    #         view = main_view(page, theme)
+    #         page.views.append(apply_bg(view))
+
+    #     elif page.route == "/hazinaha_view":
+    #         view = hazinaha_view(page)
+    #         page.views.append(apply_bg(view))
+
+    #     elif page.route == "/members":
+    #         page.views.append(members_view(page))
+
+    #     elif page.route == "/accounts":
+    #         page.views.append(accounts_view(page))
+
+
+    #     elif page.route == "/income":
+    #         page.views.append(income_view(page))
+
+    #     elif page.route == "/budget_view":
+    #         page.views.clear()
+    #         page.views.append(budget_view(page))
+
+    #     elif page.route == "/trend_view":
+    #         page.views.append(trend_view(page))
+
+    #     elif page.route == "/dashboard_view":
+    #         page.views.append(dashboard_view(page))
+
+
+    #     elif page.route == "/sabtehazine":
+    #         view = build_chat_ui(
+    #             page=page,
+    #             supabase_service=supabase_service,
+    #             controller=controller,
+    #             parse_expense_=parse_expense,
+    #             normalize_date=normalize_date,
+    #             theme=theme,
+    #         )
+    #         view.route = "/sabtehazine"
+    #         page.views.append(apply_bg(view))
+
+    #     elif page.route == "/GanttChart_view":
+    #         view = GanttChart_view(page, theme)
+    #         page.views.append(apply_bg(view))
+
+    #     else:
+    #         page.views.append(ft.View(route="/", controls=[ft.Text("404 Page")]))
+
+    #     page.update()
+
+    # def route_change(e):
+    #     page.run_task(handle_route_change, e)
+
+    # page.on_route_change = route_change
+
     page.run_task(go_start)
 
     page.title = "Sabt Hazineha"

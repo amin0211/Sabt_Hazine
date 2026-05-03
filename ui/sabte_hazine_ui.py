@@ -114,7 +114,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "profile")),
                     ),
-                    on_click=lambda e: page.go("/profile"),
+                    on_click=lambda e: page.app_go("profile"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.GROUPS_OUTLINED,
@@ -122,7 +122,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "members")),
                     ),
-                    on_click=lambda e: page.go("/members"),
+                    on_click=lambda e: page.app_go("members"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.ANALYTICS_OUTLINED,
@@ -130,7 +130,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "dashboard")),
                     ),
-                    on_click=lambda e: page.go("/dashboard_view"),
+                    on_click=lambda e: page.app_go("dashboard_view"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.ACCOUNT_BALANCE,
@@ -138,7 +138,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "Accounts")),
                     ),
-                    on_click=lambda e: page.go("/accounts"),
+                    on_click=lambda e: page.app_go("accounts"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
@@ -146,7 +146,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "Income")),
                     ),
-                    on_click=lambda e: page.go("/income"),
+                    on_click=lambda e: page.app_go("income"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
@@ -154,7 +154,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "Budget")),
                     ),
-                    on_click=lambda e: page.go("/budget_view"),
+                    on_click=lambda e: page.app_go("budget_view"),
                 ),
 
                 ft.PopupMenuItem(
@@ -163,7 +163,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "Categories")),
                     ),
-                    on_click=lambda e: page.go("/hazinaha_view"),
+                    on_click=lambda e: page.app_go("hazinaha_view"),
                 ),
 
                 ft.PopupMenuItem(
@@ -172,7 +172,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "GanttChart")),
                     ),
-                    on_click=lambda e: page.go("/GanttChart_view"),
+                    on_click=lambda e: page.app_go("GanttChart_view"),
                 ),
 
                 ft.PopupMenuItem(),
@@ -198,7 +198,7 @@ def build_chat_ui(
         except:
             pass
 
-        page.go("/login")
+        page.app_go("login")
 
     voice_state = {
         "is_recording": False,
@@ -387,6 +387,7 @@ def build_chat_ui(
                     input_field.value = ""
                     input_field.data = None
                     await input_field.focus()
+                    page.data["sabtehazine_changed"] = True
                     safe_page_update(page)
 
 
@@ -472,7 +473,7 @@ def build_chat_ui(
     )
     # tree_btn = ft.IconButton(
     #     icon=ft.Icons.ACCOUNT_TREE,
-    #     on_click=lambda e: page.go("/hazinaha_view")   # یا push_route اگر route درست داری
+    #     on_click=lambda e: page.app_go("hazinaha_view")   # یا push_route اگر route درست داری
     # )
 
     def open_start(e):
@@ -796,22 +797,27 @@ def build_chat_ui(
         page.data["category_picker_current_id"] = current_category_id
         page.data["category_picker_on_selected"] = on_selected
 
-        page.go("/hazinaha_view")
+        page.app_go("hazinaha_view")
                 
     def create_message(row):
         
         is_invalid = not row.get("id_hazine")
         def delete_message(e):
+            page.data["sabtehazine_changed"] = True
             supabase_service.delete_my_cost(row["id"])
             chat_column.controls.remove(container)
             page.update() 
             
         def edit_message(e):
             def on_save(updated_data):
+                page.data["sabtehazine_changed"] = True
                 old_category_id = row.get("id_hazine")
                 new_category_id = updated_data.get("id_hazine")
 
                 updated_row = controller.edit_cost(row["id"], updated_data)
+                page.data["sabtehazine_changed"] = True
+                page.data.pop("sabtehazine_view_cache", None)
+                page.data["sabtehazine_loaded"] = False
 
                 # ✅ فقط وقتی کاربر اصلاح کرده
                 if new_category_id and new_category_id != old_category_id:
@@ -1198,8 +1204,10 @@ def build_chat_ui(
         ),
     )
     
-    page.run_task(load_messages_async)
-    # load_messages()
+    if page.data.get("sabtehazine_changed") or not page.data.get("sabtehazine_loaded"):
+        page.run_task(load_messages_async)
+        page.data["sabtehazine_loaded"] = True
+            # load_messages()
 
     if isinstance(page.data, dict) and page.data.get("reopen_edit_cost_dialog"):
         page.data["reopen_edit_cost_dialog"] = False
@@ -1214,6 +1222,9 @@ def build_chat_ui(
                 print(f" 11111 = {old_category_id}  == {new_category_id}")
 
                 updated_row = controller.edit_cost(edit_row["id"], updated_data)
+                page.data["sabtehazine_changed"] = True
+                page.data.pop("sabtehazine_view_cache", None)
+                page.data["sabtehazine_loaded"] = False
 
                 if new_category_id and new_category_id != old_category_id:
                     raw_text = edit_row.get("temp_hazine") or edit_row.get("title", "")

@@ -9,4 +9,4 @@ def logout(page):
         pass
 
     clear_session_storage(page)
-    page.go("/login")
+    page.app_go("login")

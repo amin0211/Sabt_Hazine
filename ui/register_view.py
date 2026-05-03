@@ -148,7 +148,7 @@ def register_view(page: ft.Page):
             print("11111")
             copy_hazineha_template_for_user(user.id)
 
-            page.go("/login")
+            page.app_go("login")
 
         except Exception as ex:
             print("REGISTER ERROR:", ex)
@@ -177,7 +177,7 @@ def register_view(page: ft.Page):
 
             ft.Container(height=10),
             ft.ElevatedButton("Create Account", on_click=register, width=320),
-            ft.TextButton("Back to Login", on_click=lambda e: page.go("/login")),
+            ft.TextButton("Back to Login", on_click=lambda e: page.app_go("login")),
         ],
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )

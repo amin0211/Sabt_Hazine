@@ -17,7 +17,7 @@ def main_view(page: ft.Page, theme):
             pass
 
         clear_session_storage(page)
-        page.go("/login")
+        page.app_go("login")
 
     return ft.View(
         route="/main",
@@ -43,7 +43,7 @@ def main_view(page: ft.Page, theme):
                         ft.Container(height=20),
                         ft.ElevatedButton(
                             "Go to Expenses",
-                            on_click=lambda e: page.go("/sabtehazine"),
+                            on_click=lambda e: page.app_go("sabtehazine"),
                             style=ft.ButtonStyle(
                                 bgcolor=PRIMARY,
                                 color="#FFFFFF",
@@ -54,7 +54,7 @@ def main_view(page: ft.Page, theme):
                         ft.Container(height=10),
                         ft.OutlinedButton(
                             "Go to Categories",
-                            on_click=lambda e: page.go("/hazinaha_view"),
+                            on_click=lambda e: page.app_go("hazinaha_view"),
                         ),
                         ft.Container(height=20),
                         ft.TextButton(

@@ -314,7 +314,7 @@ def accounts_view(page: ft.Page):
                 title=ft.Text("Accounts"),
                 leading=ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
-                    on_click=lambda e: page.go("/sabtehazine"),
+                    on_click=lambda e: page.app_go("sabtehazine"),
                 ),
             ),
             ft.Container(

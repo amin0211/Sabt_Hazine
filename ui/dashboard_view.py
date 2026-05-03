@@ -32,17 +32,17 @@ def dashboard_view(page: ft.Page):
         }
 
     def go_back(e):
-        page.go("/sabtehazine")
+        page.app_go("sabtehazine")
 
     def open_budget(e):
-        # page.go("/budget_view")
+        # page.app_go("budget_view")
         page.data["from"] = "dashboard_view"
-        page.go("/budget_view")    
+        page.app_go("budget_view")    
 
     def open_hazinaha_view(e):
-        # page.go("/budget_view")
+        # page.app_go("budget_view")
         page.data["from"] = "dashboard_view"
-        page.go("/hazinaha_view")    
+        page.app_go("hazinaha_view")    
         
     def progress_color(value):
         if value < 0.7:
@@ -264,11 +264,11 @@ def dashboard_view(page: ft.Page):
                     [
                         ft.ElevatedButton(
                             content=ft.Text("Transactions"),
-                            on_click=lambda e: page.go("/transaction_report"),
+                            on_click=lambda e: page.app_go("transaction_report"),
                         ),
                         ft.ElevatedButton(
                             content=ft.Text("Trends"),
-                            on_click=lambda e: page.go("/trend_view"),
+                            on_click=lambda e: page.app_go("trend_view"),
                         ),
                     ],
                     spacing=8,

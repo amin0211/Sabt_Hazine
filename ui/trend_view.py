@@ -369,7 +369,7 @@ def trend_view(page: ft.Page):
         page.data["category_picker_on_selected"] = on_category_selected
         page.data["from"] = "trend_view"
 
-        page.go("/hazinaha_view")
+        page.app_go("hazinaha_view")
 
     category_btn.on_tap = choose_category
 
@@ -599,7 +599,7 @@ def trend_view(page: ft.Page):
                 icon_size=18,
                 width=34,
                 height=34,
-                on_click=lambda e: page.go("/dashboard_view"),
+                on_click=lambda e: page.app_go("dashboard_view"),
             ),
             ft.Text("Trends", size=22, weight=ft.FontWeight.BOLD),
         ],

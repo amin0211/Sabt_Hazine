@@ -100,7 +100,7 @@ def profile_view(page: ft.Page):
             apply_language_ui(selected_language_id, langs)
 
             show_message("Profile updated successfully.", ft.Colors.GREEN_400)
-            page.go(page.route)
+            # page.app_go("profile")
 
 
 
@@ -128,7 +128,7 @@ def profile_view(page: ft.Page):
 
             ft.Container(height=10),
             ft.ElevatedButton("Save Changes", on_click=save_profile, width=320),
-            ft.TextButton("Back", on_click=lambda e: page.go("/sabtehazine")),
+            ft.TextButton("Back", on_click=lambda e: page.app_go("sabtehazine")),
         ],
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )

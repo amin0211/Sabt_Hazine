@@ -116,7 +116,7 @@ def GanttChart_view(page: ft.Page, theme):
         border_radius=14,
         padding=ft.padding.symmetric(horizontal=14, vertical=10),
         ink=True,
-        on_click=lambda e: page.go("/sabtehazine"),
+        on_click=lambda e: page.app_go("sabtehazine"),
         content=ft.Row(
             [
                 ft.Icon(ft.Icons.ARROW_BACK_ROUNDED, size=18, color=text_primary),

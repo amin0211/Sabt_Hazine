@@ -82,28 +82,44 @@ def hazinaha_view(page: ft.Page):
     
     without_edit = page.data.get("without_edit") == True
 
-    def get_from_route():
-        if page.data.get("from") == "dashboard_view":
-            return "/dashboard_view"
+    # def get_from_route():
+    #     if page.data.get("from") == "dashboard_view":
+    #         return "/dashboard_view"
 
+
+    #     if page.data.get("from") == "trend_view":
+    #         return "/trend_view"
+        
+
+    #     return "/sabtehazine"
+
+    def get_from_view():
+        if page.data.get("from") == "dashboard_view":
+            return "dashboard_view"
 
         if page.data.get("from") == "trend_view":
-            return "/trend_view"
-        
-        # if page.data.get("from") == "edit_cost_dialog":
-        #     return "/edit_cost_dialog"
+            return "trend_view"
 
-        return "/sabtehazine"
+        if page.data.get("from") == "edit_cost_dialog":
+            return "edit_cost_dialog"   # 👈 مهم
 
+        return "sabtehazine"
 
     def go_back(e):
-        page.go(get_from_route())   # یا هر صفحه‌ای که می‌خوای برگرده
+        from_view = page.data.get("from")
 
-        # if page.data.get("from") == "dashboard_view":
-        #     page.data["from"] = None
-        #     page.go("/dashboard_view")
-        # else:
-        #     page.go("/sabtehazine")
+        if from_view == "edit_cost_dialog":
+            dialog_ref = page.data.get("edit_cost_dialog_ref")
+
+            page.app_go("sabtehazine")
+
+            if dialog_ref:
+                dialog_ref.open = True
+                page.update()
+
+            return
+
+        page.app_go(get_from_view())
 
     def confirm_category_pick(e=None):
         selected_node_id = selected_id["value"]
@@ -129,11 +145,18 @@ def hazinaha_view(page: ft.Page):
             })
 
         if page.data.get("reopen_edit_cost_dialog"):
-            page.go("/sabtehazine")  # موقت
-        else:
-            page.go(get_from_route())
-        
+            page.data.pop("reopen_edit_cost_dialog", None)
 
+            dialog_ref = page.data.pop("edit_cost_dialog_ref", None)
+
+            page.app_go("sabtehazine")
+
+            if dialog_ref:
+                dialog_ref.open = True
+                page.update()
+        else:
+            page.app_go(get_from_view())
+            
     def safe_update():
         try:
             page.update()
@@ -215,6 +238,7 @@ def hazinaha_view(page: ft.Page):
             .execute()
         )
         return response.data or []
+
 
     def build_tree_from_db(data):
         if not data:
@@ -475,7 +499,8 @@ def hazinaha_view(page: ft.Page):
 
         parts.append(
             ft.Text(
-                f"مبلغ: {node.total_cost}",
+                f"مبلغ: {node.total_cost:,.2f}",
+                # f"مبلغ: {node.total_cost}",
                 size=10,
                 color=SUCCESS_TEXT,
                 weight=ft.FontWeight.W_600,

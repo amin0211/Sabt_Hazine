@@ -260,6 +260,7 @@ def open_edit_cost_dialog(
         #     on_selected=on_category_selected,
         # )
 
+
     def choose_category(e=None):
         page.data = page.data or {}
 
@@ -267,16 +268,18 @@ def open_edit_cost_dialog(
         page.data["category_picker_current_id"] = selected_category["category_id"]
         page.data["category_picker_on_selected"] = on_category_selected
 
-        # مهم: بعد از برگشت، دوباره فرم ویرایش باز شود
-        page.data["reopen_edit_cost_dialog"] = True
-        page.data["edit_cost_row"] = row
-
         page.data["from"] = "edit_cost_dialog"
-        page.go("/hazinaha_view")
-    
-        # page.data["category_picker_return_route"] = "/edit_cost"
-        # page.go("/hazinaha_view")
-        
+        page.data["reopen_edit_cost_dialog"] = True
+
+        # مهم: خود dialog را نگه می‌داریم که بعداً دوباره بازش کنیم
+        page.data["edit_cost_dialog_ref"] = dialog
+
+        # مهم‌ترین خط: قبل از رفتن، فرم ویرایش را ببند
+        dialog.open = False
+        page.update()
+
+        page.app_go("hazinaha_view")
+
     def close_dialog(e=None):
         dialog.open = False
         safe_update()

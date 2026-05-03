@@ -416,7 +416,7 @@ def income_view(page: ft.Page):
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
                     tooltip="Back",
-                    on_click=lambda e: page.go("/sabtehazine"),
+                    on_click=lambda e: page.app_go("sabtehazine"),
                 ),
                 month_tf,
                 ft.IconButton(
