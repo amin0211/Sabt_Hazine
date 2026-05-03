@@ -434,7 +434,7 @@ def open_edit_cost_dialog(
             
                 price_field,
 
-                currency_field,
+                # currency_field,
 
                 error_text,
             ],
