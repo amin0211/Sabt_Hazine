@@ -258,11 +258,6 @@ def main(page: ft.Page):
     # page.add(ft.Text("Hello from Web"))
 
 
-
-# def main(page: ft.Page):
-    # page.title = "Sabt Hazineha"
-    # page.add(ft.Text("Loading main app..."))
-    # page.update
     
 ft.app(
     target=main,
@@ -270,15 +265,5 @@ ft.app(
     host="0.0.0.0",
     port=int(os.environ.get("PORT", 8080))
 )
-
-
-# port = int(os.environ.get("PORT", 8000))
-
-# ft.app(
-#     target=main,
-#     view=AppView.WEB_BROWSER,
-#     host="0.0.0.0",
-#     port=port,
-# )
 
 # ft.app(target=main)

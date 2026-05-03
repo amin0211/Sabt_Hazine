@@ -12,21 +12,27 @@ from services.supabase_service import (
 )
 
 tz = ZoneInfo("America/Vancouver")
-now = datetime.now(tz)
+# now = datetime.now(tz)
+def now_local():
+    return datetime.now(tz)
+
+def today_local():
+    return now_local().date()
 
 def normalize_date(date_str, text):
     if date_str:
         return date_str
 
     text = (text or "").lower()
+    today = today_local()
 
     if "yesterday" in text or "دیروز" in text:
-        return (now - timedelta(days=1)).date().isoformat()
+        return (today - timedelta(days=1)).isoformat()
 
     if "today" in text or "امروز" in text:
-        return now.date().isoformat()
+        return today.isoformat()
 
-    return now.date().isoformat()
+    return today.isoformat()
 
 def extract_member_id(member_name):
     member_row = find_member_by_name(member_name)
