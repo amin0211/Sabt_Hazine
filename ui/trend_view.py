@@ -1,6 +1,8 @@
 import flet as ft
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+from collections import defaultdict
+
 
 from services.supabase_service import (
     load_my_costs_by_date,
@@ -11,6 +13,473 @@ from services.supabase_service import (
 
 TZ = ZoneInfo("America/Vancouver")
 
+
+def money(v):
+    try:
+        return f"${float(v):,.2f}"
+    except:
+        return "$0.00"
+
+
+def _summary_cards(costs, from_date, to_date):
+    total = _total_expense(costs)
+
+    try:
+        start = date.fromisoformat(from_date)
+        end = date.fromisoformat(to_date)
+        days = max((end - start).days + 1, 1)
+    except:
+        days = 1
+
+    avg_daily = total / days
+    count = len(costs)
+
+    return ft.Row(
+        [
+            _mini_card("Total Spending", money(total), ft.Icons.PAID_OUTLINED),
+            _mini_card("Transactions", str(count), ft.Icons.RECEIPT_LONG_OUTLINED),
+            _mini_card("Avg / Day", money(avg_daily), ft.Icons.TRENDING_UP),
+        ],
+        spacing=8,
+    )
+
+
+def _mini_card(title, value, icon):
+    return ft.Container(
+        expand=True,
+        bgcolor="#FFFFFF",
+        border_radius=16,
+        padding=12,
+        border=ft.border.all(1, "#E5E7EB"),
+        content=ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Icon(icon, size=16, color="#2563EB"),
+                        ft.Text(title, size=11, color="#6B7280"),
+                    ],
+                    spacing=5,
+                ),
+                ft.Text(
+                    value,
+                    size=16,
+                    weight=ft.FontWeight.BOLD,
+                    color="#111827",
+                    max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+            ],
+            spacing=6,
+        ),
+    )
+
+def _category_trends_box(costs):
+    category_totals = defaultdict(float)
+
+    for row in costs:
+        title = row.get("category_title") or "Unknown"
+        category_totals[title] += float(row.get("price") or 0)
+
+    top_items = sorted(
+        category_totals.items(),
+        key=lambda x: x[1],
+        reverse=True,
+    )[:6]
+
+    total = sum(category_totals.values())
+
+    rows = []
+
+    for title, amount in top_items:
+        percent = 0 if total == 0 else amount / total
+
+        rows.append(
+            ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                title,
+                                size=12,
+                                expand=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                                max_lines=1,
+                            ),
+                            ft.Text(
+                                money(amount),
+                                size=12,
+                                weight=ft.FontWeight.W_600,
+                            ),
+                        ],
+                    ),
+                    ft.ProgressBar(
+                        value=percent,
+                        height=6,
+                        bgcolor="#E5E7EB",
+                        color="#16A34A",
+                    ),
+                ],
+                spacing=3,
+            )
+        )
+
+    if not rows:
+        rows = [ft.Text("No category data", color="#6B7280", size=12)]
+
+    return _card(
+        "Category Spending",
+        ft.Column(rows, spacing=8),
+    )
+
+
+def _member_spending_box(costs):
+    member_totals = defaultdict(float)
+
+    for row in costs:
+        name = row.get("member_name") or "No member"
+        member_totals[name] += float(row.get("price") or 0)
+
+    top_items = sorted(
+        member_totals.items(),
+        key=lambda x: x[1],
+        reverse=True,
+    )[:6]
+
+    rows = []
+
+    for name, amount in top_items:
+        rows.append(
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.PERSON_OUTLINE, size=15, color="#6B7280"),
+                    ft.Text(
+                        name,
+                        size=12,
+                        expand=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        max_lines=1,
+                    ),
+                    ft.Text(
+                        money(amount),
+                        size=12,
+                        weight=ft.FontWeight.W_600,
+                    ),
+                ],
+                spacing=6,
+            )
+        )
+
+    if not rows:
+        rows = [ft.Text("No member data", color="#6B7280", size=12)]
+
+    return _card(
+        "Member Spending",
+        ft.Column(rows, spacing=8),
+    )
+
+
+def _recent_transactions_box(costs):
+    sorted_costs = sorted(
+        costs,
+        key=lambda x: x.get("date_cost") or "",
+        reverse=True,
+    )[:8]
+
+    rows = []
+
+    for row in sorted_costs:
+        title = row.get("title") or "Untitled"
+        member = row.get("member_name") or "No member"
+        amount = float(row.get("price") or 0)
+        d = row.get("date_cost") or ""
+
+        rows.append(
+            ft.Container(
+                padding=10,
+                border_radius=12,
+                bgcolor="#F9FAFB",
+                content=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.RECEIPT_OUTLINED, size=16, color="#DC2626"),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    title,
+                                    size=12,
+                                    weight=ft.FontWeight.W_600,
+                                    max_lines=1,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                                ft.Text(
+                                    f"{d} • {member}",
+                                    size=10,
+                                    color="#6B7280",
+                                    max_lines=1,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+                        ft.Text(
+                            money(amount),
+                            size=12,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+            )
+        )
+
+    if not rows:
+        rows = [ft.Text("No transactions", color="#6B7280", size=12)]
+
+    return _card(
+        "Recent Transactions",
+        ft.Column(rows, spacing=8),
+    )
+
+
+def _forecast_box(costs, from_date, to_date):
+    total = _total_expense(costs)
+
+    try:
+        start = date.fromisoformat(from_date)
+        end = date.fromisoformat(to_date)
+        days = max((end - start).days + 1, 1)
+    except Exception:
+        days = 1
+
+    avg_daily = total / days
+    projected_30_days = avg_daily * 30
+
+    return _card(
+        "Forecast",
+        ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Text("Average daily spending", expand=True, size=12),
+                        ft.Text(money(avg_daily), weight=ft.FontWeight.W_600),
+                    ],
+                ),
+                ft.Row(
+                    [
+                        ft.Text("Projected 30-day spending", expand=True, size=12),
+                        ft.Text(money(projected_30_days), weight=ft.FontWeight.W_600),
+                    ],
+                ),
+            ],
+            spacing=8,
+        ),
+    )
+
+
+def _daily_spending_box(costs):
+    daily_totals = {}
+
+    for row in costs:
+        d = str(row.get("date_cost") or "Unknown")[:10]
+        daily_totals[d] = daily_totals.get(d, 0) + float(row.get("price") or 0)
+
+    def sort_date(item):
+        d, _ = item
+        try:
+            return date.fromisoformat(d)
+        except:
+            return date.min
+
+    items = sorted(daily_totals.items(), key=sort_date, reverse=True)
+    max_amount = max([amount for _, amount in items], default=0)
+
+    daily_list = ft.ListView(
+        height=245,
+        spacing=10,
+        padding=ft.padding.only(right=4),
+        auto_scroll=False,
+    )
+
+    if not items:
+        daily_list.controls.append(
+            ft.Container(
+                height=120,
+                alignment=ft.Alignment.CENTER,
+                content=ft.Text("No daily spending yet", color="#9CA3AF", size=12),
+            )
+        )
+    else:
+        for index, (d, amount) in enumerate(items):
+            percent = 0 if max_amount == 0 else amount / max_amount
+
+            try:
+                parsed_date = date.fromisoformat(d)
+                day_label = parsed_date.strftime("%a")
+            except:
+                day_label = ""
+
+            is_today = d == today_local().isoformat()
+
+            daily_list.controls.append(
+                ft.Container(
+                    padding=12,
+                    border_radius=14,
+                    bgcolor="#EFF6FF" if is_today else "#F9FAFB",
+                    border=ft.border.all(
+                        1,
+                        "#93C5FD" if is_today else "#E5E7EB",
+                    ),
+                    content=ft.Column(
+                        [
+                            ft.Row(
+                                [
+                                    ft.Container(
+                                        width=38,
+                                        height=38,
+                                        border_radius=12,
+                                        bgcolor="#2563EB" if is_today else "#FFFFFF",
+                                        alignment=ft.Alignment.CENTER,
+                                        content=ft.Column(
+                                            [
+                                                ft.Text(
+                                                    day_label,
+                                                    size=9,
+                                                    color="#FFFFFF" if is_today else "#6B7280",
+                                                    weight=ft.FontWeight.W_600,
+                                                ),
+                                                ft.Text(
+                                                    d[-2:] if d != "Unknown" else "?",
+                                                    size=13,
+                                                    color="#FFFFFF" if is_today else "#111827",
+                                                    weight=ft.FontWeight.BOLD,
+                                                ),
+                                            ],
+                                            spacing=0,
+                                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                            alignment=ft.MainAxisAlignment.CENTER,
+                                        ),
+                                    ),
+
+                                    ft.Column(
+                                        [
+                                            ft.Row(
+                                                [
+                                                    ft.Text(
+                                                        "Today" if is_today else d,
+                                                        size=13,
+                                                        weight=ft.FontWeight.W_700,
+                                                        color="#111827",
+                                                        expand=True,
+                                                    ),
+                                                    ft.Text(
+                                                        money(amount),
+                                                        size=13,
+                                                        weight=ft.FontWeight.BOLD,
+                                                        color="#DC2626",
+                                                    ),
+                                                ],
+                                            ),
+                                            ft.ProgressBar(
+                                                value=percent,
+                                                height=7,
+                                                bgcolor="#E5E7EB",
+                                                color="#2563EB",
+                                            ),
+                                        ],
+                                        spacing=7,
+                                        expand=True,
+                                    ),
+                                ],
+                                spacing=10,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                        ],
+                    ),
+                )
+            )
+
+    return ft.Container(
+        bgcolor="#FFFFFF",
+        border_radius=18,
+        padding=14,
+        border=ft.border.all(1, "#E5E7EB"),
+        shadow=ft.BoxShadow(
+            blur_radius=14,
+            spread_radius=0,
+            color="#12000000",
+            offset=ft.Offset(0, 4),
+        ),
+        content=ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Container(
+                            width=36,
+                            height=36,
+                            border_radius=12,
+                            bgcolor="#EFF6FF",
+                            alignment=ft.Alignment.CENTER,
+                            content=ft.Icon(
+                                ft.Icons.CALENDAR_MONTH_OUTLINED,
+                                size=18,
+                                color="#2563EB",
+                            ),
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    "Daily Spending",
+                                    size=16,
+                                    weight=ft.FontWeight.BOLD,
+                                    color="#111827",
+                                ),
+                                ft.Text(
+                                    "Newest days first",
+                                    size=11,
+                                    color="#6B7280",
+                                ),
+                            ],
+                            spacing=1,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+
+                daily_list,
+            ],
+            spacing=12,
+        ),
+    )
+
+def _spending_page(filters):
+    costs = _filter_costs(filters)
+
+    return ft.Container(
+        padding=12,
+        content=ft.Column(
+            [
+                _summary_cards(
+                    costs,
+                    filters["from_date"],
+                    filters["to_date"],
+                ),
+                _daily_spending_box(costs),
+                _category_trends_box(costs),
+                _member_spending_box(costs),
+                _forecast_box(
+                    costs,
+                    filters["from_date"],
+                    filters["to_date"],
+                ),
+                _recent_transactions_box(costs),
+            ],
+            spacing=14,
+            scroll=ft.ScrollMode.AUTO,
+        ),
+    )
 
 def today_local():
     return datetime.now(TZ).date()
@@ -60,32 +529,6 @@ def _card(title, content):
             spacing=8,
         ),
     )
-
-
-def _daily_spending_box(costs):
-    total = _total_expense(costs)
-
-    return _card(
-        "Daily Spending",
-        ft.Column(
-            [
-                ft.Text(
-                    f"Total expense: {total:,.0f}",
-                    size=13,
-                    color="#6B7280",
-                ),
-                ft.Container(
-                    height=180,
-                    bgcolor="#F9FAFB",
-                    border_radius=12,
-                    alignment=ft.Alignment.CENTER,
-                    content=ft.Text("Line chart will be here"),
-                ),
-            ],
-            spacing=8,
-        ),
-    )
-
 
 def _category_trends_box(costs):
     category_totals = {}
@@ -152,26 +595,6 @@ def _forecast_box(costs, from_date, to_date):
         ),
     )
 
-
-def _spending_page(filters):
-    costs = _filter_costs(filters)
-
-    return ft.Container(
-        padding=12,
-        content=ft.Column(
-            [
-                _daily_spending_box(costs),
-                _category_trends_box(costs),
-                _forecast_box(
-                    costs,
-                    filters["from_date"],
-                    filters["to_date"],
-                ),
-            ],
-            spacing=14,
-            scroll=ft.ScrollMode.AUTO,
-        ),
-    )
 
 
 def _budget_page():
@@ -284,7 +707,7 @@ def trend_view(page: ft.Page):
     start_btn = ft.GestureDetector(
         on_tap=open_start_picker,
         content=build_filter_button(
-            f"From: {start_date}",
+            f"Fr: {start_date}",
             ft.Icons.CALENDAR_MONTH,
         ),
     )

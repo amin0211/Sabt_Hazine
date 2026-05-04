@@ -262,10 +262,10 @@ def dashboard_view(page: ft.Page):
                 ),
                 ft.Row(
                     [
-                        ft.ElevatedButton(
-                            content=ft.Text("Transactions"),
-                            on_click=lambda e: page.app_go("transaction_report"),
-                        ),
+                        # ft.ElevatedButton(
+                        #     content=ft.Text("Transactions"),
+                        #     on_click=lambda e: page.app_go("transaction_report"),
+                        # ),
                         ft.ElevatedButton(
                             content=ft.Text("Trends"),
                             on_click=lambda e: page.app_go("trend_view"),

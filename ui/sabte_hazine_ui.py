@@ -66,6 +66,7 @@ def build_chat_ui(
         scroll=ft.ScrollMode.ALWAYS,
     )
 
+
     def remove_empty_state():
         chat_column.controls = [
             c for c in chat_column.controls
@@ -533,7 +534,7 @@ def build_chat_ui(
 
     summary_income = ft.Text(
         "$0.00",
-        size=13,
+        size=10,
         weight=ft.FontWeight.BOLD,
         color="#16A34A",
     )
@@ -545,14 +546,14 @@ def build_chat_ui(
 
     summary_expense = ft.Text(
         "$0.00",
-        size=13,
+        size=10,
         weight=ft.FontWeight.BOLD,
         color="#DC2626",
     )
 
     summary_left = ft.Text(
         "$0.00",
-        size=13,
+        size=10,
         weight=ft.FontWeight.BOLD,
         color=PRIMARY,
     )
@@ -819,6 +820,14 @@ def build_chat_ui(
                 page.data.pop("sabtehazine_view_cache", None)
                 page.data["sabtehazine_loaded"] = False
 
+                updated_row["id_hazine"] = updated_data.get("id_hazine")
+                updated_row["category_title"] = updated_data.get("category_title")
+                updated_row["member_id"] = updated_data.get("member_id")
+                updated_row["member_name"] = updated_data.get("member_name") or row.get("member_name")
+                updated_row["price"] = updated_data.get("price")
+                updated_row["title"] = updated_data.get("title")
+                updated_row["date_cost"] = updated_data.get("date_cost")
+
                 # ✅ فقط وقتی کاربر اصلاح کرده
                 if new_category_id and new_category_id != old_category_id:
 
@@ -852,7 +861,9 @@ def build_chat_ui(
         title = row.get("title", t(page, "edit_cost_title"))
         date_text = row.get("date_cost", "")
         category_title = row.get("category_title", "")
-        member_name = row.get("member_name", "")
+        member_name = (row.get("member_name") or "").strip()
+        price = row.get("price", 0)
+        price_text = money(price)
 
 
         def tiny_action_btn(icon, color, on_click):
@@ -924,12 +935,12 @@ def build_chat_ui(
                                     ),
 
                                     ft.Text(
-                                        member_name,
+                                        f"{price_text} / {member_name}" if member_name else price_text,
                                         size=10,
-                                        color="#9CA3AF",
-                                        max_lines=1,
-                                        overflow=ft.TextOverflow.ELLIPSIS,
-                                    ) if member_name else ft.Container(),
+                                        color="#6B7280",
+                                        weight=ft.FontWeight.W_500,
+                                    ),
+
                                 ],
                                 spacing=2,
                             ),
@@ -1225,6 +1236,14 @@ def build_chat_ui(
                 page.data["sabtehazine_changed"] = True
                 page.data.pop("sabtehazine_view_cache", None)
                 page.data["sabtehazine_loaded"] = False
+
+                updated_row["id_hazine"] = updated_data.get("id_hazine")
+                updated_row["category_title"] = updated_data.get("category_title")
+                updated_row["member_id"] = updated_data.get("member_id")
+                updated_row["member_name"] = updated_data.get("member_name") or edit_row.get("member_name")
+                updated_row["price"] = updated_data.get("price")
+                updated_row["title"] = updated_data.get("title")
+                updated_row["date_cost"] = updated_data.get("date_cost")
 
                 if new_category_id and new_category_id != old_category_id:
                     raw_text = edit_row.get("temp_hazine") or edit_row.get("title", "")

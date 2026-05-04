@@ -1,3 +1,60 @@
+#اگر بخوام از جدول hazineha_template به hazineha برای یه کاربر بخصوص منتقل کنه
+# 
+#  do $$
+# declare
+#     v_user_id uuid := '9fceebe3-e299-4f14-870b-c0cfe2a32ff7';
+# begin
+#     create temporary table temp_hazineha_map (
+#         old_template_id bigint,
+#         new_hazineha_id bigint
+#     ) on commit drop;
+
+#     with inserted as (
+#         insert into hazineha (
+#             user_id,
+#             id_parent,
+#             title,
+#             template_id,
+#             keywords,
+#             embedding_text,
+#             is_active
+#         )
+#         select
+#             v_user_id,
+#             null,
+#             ht.title,
+#             ht.id,
+#             coalesce(ht.keywords, '[]'::jsonb),
+#             coalesce(ht.embedding_text, ''),
+#             coalesce(ht.is_active, true)
+#         from hazineha_template ht
+#         where not exists (
+#             select 1
+#             from hazineha h
+#             where h.user_id = v_user_id
+#               and h.template_id = ht.id
+#         )
+#         returning id, template_id
+#     )
+#     insert into temp_hazineha_map (old_template_id, new_hazineha_id)
+#     select template_id, id
+#     from inserted;
+
+#     update hazineha h
+#     set id_parent = parent_map.new_hazineha_id
+#     from hazineha_template ht
+#     join temp_hazineha_map child_map
+#         on child_map.old_template_id = ht.id
+#     join temp_hazineha_map parent_map
+#         on parent_map.old_template_id = ht.id_parent
+#     where h.id = child_map.new_hazineha_id
+#       and h.user_id = v_user_id;
+
+# end $$;
+
+
+
+
 import flet as ft
 from supabase import create_client
 from dotenv import load_dotenv
@@ -133,10 +190,7 @@ def hazinaha_view(page: ft.Page):
         callback = None
 
         if isinstance(page.data, dict):
-            callback = page.data.pop("category_picker_on_selected", None)
-            page.data.pop("without_edit", None)
-            page.data.pop("category_picker_mode", None)
-            page.data.pop("category_picker_current_id", None)
+            callback = page.data.get("category_picker_on_selected")
 
         if callback:
             callback({
@@ -144,19 +198,17 @@ def hazinaha_view(page: ft.Page):
                 "category_title": selected_node.name,
             })
 
-        if page.data.get("reopen_edit_cost_dialog"):
-            page.data.pop("reopen_edit_cost_dialog", None)
-
-            dialog_ref = page.data.pop("edit_cost_dialog_ref", None)
+        # 🔥 مهم‌ترین قسمت
+        if page.data.get("from") == "edit_cost_dialog":
+            page.data["reopen_edit_cost_dialog"] = True
+            page.data["sabtehazine_loaded"] = False
+            page.data["sabtehazine_changed"] = True
 
             page.app_go("sabtehazine")
+            return
 
-            if dialog_ref:
-                dialog_ref.open = True
-                page.update()
-        else:
-            page.app_go(get_from_view())
-            
+        page.app_go(get_from_view())
+                
     def safe_update():
         try:
             page.update()
@@ -370,34 +422,103 @@ def hazinaha_view(page: ft.Page):
         update_title(node.id, value)
         rebuild_tree(update_page=False)
 
+    def close_dialog(e=None):
+        dialog.open = False
+        page.update()
+
     def delete_node(parent, child, e=None):
         if without_edit:
             return
-        if parent:
-            if child.children:
-                return
 
-            (
-                supabase
-                .table("hazineha")
-                .delete()
-                .eq("id", child.id)
-                .eq("user_id", current_user_id)
-                .execute()
-            )
+        def close_dialog(e=None):
+            dialog.open = False
+            page.update()
 
-            page.data["hazineha_changed"] = True
+        def confirm_delete(e=None):
+            try:
+                res = (
+                    supabase
+                    .table("hazineha")
+                    .delete()
+                    .eq("id", child.id)
+                    .eq("user_id", current_user_id)
+                    .execute()
+                )
 
+                print("DELETE RESULT:", res.data)
 
-            if hasattr(load_all_hazineha, "cache_clear"):
-                load_all_hazineha.cache_clear()
+                if child in parent.children:
+                    parent.children.remove(child)
 
-            if hasattr(load_leaf_hazineha, "cache_clear"):
-                load_leaf_hazineha.cache_clear()
-                
-            parent.children.remove(child)
-            rebuild_tree()
+                if child.id in nodes_dict:
+                    del nodes_dict[child.id]
+
+                page.data["hazineha_changed"] = True
+
+                if hasattr(load_all_hazineha, "cache_clear"):
+                    load_all_hazineha.cache_clear()
+
+                if hasattr(load_leaf_hazineha, "cache_clear"):
+                    load_leaf_hazineha.cache_clear()
+
+                dialog.open = False
+                rebuild_tree()
+
+            except Exception as ex:
+                print("DELETE ERROR:", ex)
+                dialog.open = False
+                page.update()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("حذف کتگوری"),
+            content=ft.Text(f"'{child.name}' حذف شود؟"),
+            actions=[
+                ft.TextButton("لغو", on_click=close_dialog),
+                ft.TextButton("حذف", on_click=confirm_delete),
+            ],
+        )
+
+        page.overlay.append(dialog)
+        dialog.open = True
+        page.update()
+ 
+    def confirm_delete(e):
+        supabase.table("hazineha") \
+            .delete() \
+            .eq("id", child.id) \
+            .eq("user_id", current_user_id) \
+            .execute()
+
+        # 🔥 دوباره کل دیتا رو از دیتابیس بگیر
+        data = load_data_from_db()
+        new_roots, new_nodes = build_tree_from_db(data)
+
+        root_nodes.clear()
+        root_nodes.extend(new_roots)
+
+        nodes_dict.clear()
+        nodes_dict.update(new_nodes)
+
+        dialog.open = False
+
+        page.data["hazineha_changed"] = True
+
+        rebuild_tree()
         
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("حذف کتگوری"),
+            content=ft.Text(f"'{child.name}' حذف شود؟"),
+            actions=[
+                ft.TextButton("لغو", on_click=lambda e: close_dialog()),
+                ft.TextButton("حذف", on_click=confirm_delete),
+            ],
+        )
+
+        page.dialog = dialog
+        dialog.open = True
+        page.update()        
 
     def start_adding_child(node, e=None):
         if without_edit:

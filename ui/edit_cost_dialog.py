@@ -40,6 +40,11 @@ def open_edit_cost_dialog(
         "member_name": row.get("member_name", "") or "",
     }
 
+    def clear_member(e=None):
+        selected_member["member_id"] = None
+        selected_member["member_name"] = ""
+        update_member_ui()
+
     member_field = ft.TextField(
         label=t(page, "edit_cost_member"),
         value=selected_member["member_name"] or "انتخاب عضو",
@@ -53,12 +58,25 @@ def open_edit_cost_dialog(
         text_size=14,
         height=FIELD_HEIGHT,
         content_padding=ft.padding.symmetric(horizontal=14, vertical=12),
+
+        # 🔥 این خط مهمه
+        suffix_icon=ft.IconButton(
+            icon=ft.Icons.CLOSE,
+            icon_size=16,
+            tooltip="حذف عضو",
+            on_click=clear_member,
+            visible=bool(selected_member["member_id"])  # فقط وقتی عضو داره
+        ),
     )
+
 
     def update_member_ui():
         member_field.value = selected_member["member_name"] or "انتخاب عضو"
-        safe_update()
 
+        # 🔥 کنترل نمایش دکمه حذف
+        member_field.suffix_icon.visible = bool(selected_member["member_id"])
+
+        safe_update()
 
     def choose_member(e=None):
         def on_member_selected(member):
@@ -243,23 +261,19 @@ def open_edit_cost_dialog(
 
     date_picker.on_change = on_date_change
 
+
     def on_category_selected(result: dict):
         selected_category["category_id"] = result.get("category_id")
         selected_category["category_title"] = result.get("category_title") or ""
 
-        # مهم: برای وقتی dialog دوباره باز می‌شود
         row["id_hazine"] = selected_category["category_id"]
         row["category_title"] = selected_category["category_title"]
+        row["old_category_id"] = original_category_id
+
+        page.data["edit_cost_row"] = row
 
         update_category_ui()
-
-    # def choose_category(e=None):
-        # open_category_picker_dialog(
-        #     page=page,
-        #     current_category_id=selected_category["category_id"],
-        #     on_selected=on_category_selected,
-        # )
-
+        
 
     def choose_category(e=None):
         page.data = page.data or {}
@@ -271,15 +285,15 @@ def open_edit_cost_dialog(
         page.data["from"] = "edit_cost_dialog"
         page.data["reopen_edit_cost_dialog"] = True
 
-        # مهم: خود dialog را نگه می‌داریم که بعداً دوباره بازش کنیم
-        page.data["edit_cost_dialog_ref"] = dialog
+        row["old_category_id"] = original_category_id
+        page.data["edit_cost_row"] = row
 
-        # مهم‌ترین خط: قبل از رفتن، فرم ویرایش را ببند
         dialog.open = False
         page.update()
 
-        page.app_go("hazinaha_view")
-
+        page.app_go("hazinaha_view")       
+    
+    
     def close_dialog(e=None):
         dialog.open = False
         safe_update()
