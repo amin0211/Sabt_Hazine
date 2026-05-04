@@ -1,7 +1,7 @@
 import flet as ft
 from datetime import date, datetime
 # from ui.category_picker_dialog import open_category_picker_dialog
-from services.supabase_service import get_members, add_member
+from services.supabase_service import get_members, add_member, get_accounts, find_account_by_id
 from ui.member_manager_shared import open_member_picker_dialog
 from services.i18n import t
 from zoneinfo import ZoneInfo
@@ -39,6 +39,95 @@ def open_edit_cost_dialog(
         "member_id": row.get("member_id"),
         "member_name": row.get("member_name", "") or "",
     }
+
+
+    acc = find_account_by_id(row.get("account_id"))
+
+    selected_account = {
+        "account_id": row.get("account_id"),
+        "account_name": acc.get("account_name", "") if acc else "",
+    }
+
+    def clear_account(e=None):
+        selected_account["account_id"] = None
+        selected_account["account_name"] = ""
+        update_account_ui()
+
+
+    account_field = ft.TextField(
+        label="حساب",
+        value=selected_account["account_name"] or "انتخاب حساب",
+        read_only=True,
+        expand=True,
+        border_radius=RADIUS,
+        filled=True,
+        bgcolor=CARD_BG,
+        border_color=BORDER,
+        focused_border_color=BORDER_FOCUS,
+        text_size=14,
+        height=FIELD_HEIGHT,
+        content_padding=ft.padding.symmetric(horizontal=14, vertical=12),
+
+        suffix_icon=ft.IconButton(
+            icon=ft.Icons.CLOSE,
+            icon_size=16,
+            tooltip="حذف حساب",
+            on_click=clear_account,
+            visible=bool(selected_account["account_id"])
+        ),
+    )
+
+    def update_account_ui():
+        account_field.value = selected_account["account_name"] or "انتخاب حساب"
+        account_field.suffix_icon.visible = bool(selected_account["account_id"])
+        safe_update()
+
+    def choose_account(e=None):
+        accounts = get_accounts() or []
+
+        dlg = ft.AlertDialog(modal=True)
+
+        def close_dlg(ev=None):
+            dlg.open = False
+            safe_update()
+
+        def select_account(acc):
+            selected_account["account_id"] = acc.get("id")
+            selected_account["account_name"] = acc.get("account_name", "")
+            dlg.open = False
+            update_account_ui()
+
+        if not accounts:
+            content = ft.Text("هیچ حسابی ثبت نشده است.")
+        else:
+            content = ft.Column(
+                [
+                    ft.ListTile(
+                        title=ft.Text(acc.get("account_name", "")),
+                        subtitle=ft.Text(acc.get("account_type", "")),
+                        leading=ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED),
+                        on_click=lambda e, acc=acc: select_account(acc),
+                    )
+                    for acc in accounts
+                ],
+                tight=True,
+                spacing=4,
+                scroll=ft.ScrollMode.AUTO,
+                height=300,
+            )
+
+        dlg.title = ft.Text("انتخاب حساب")
+        dlg.content = content
+        dlg.actions = [
+            ft.TextButton("بستن", on_click=close_dlg),
+        ]
+
+        if dlg not in page.overlay:
+            page.overlay.append(dlg)
+
+        dlg.open = True
+        safe_update()
+        
 
     def clear_member(e=None):
         selected_member["member_id"] = None
@@ -352,6 +441,7 @@ def open_edit_cost_dialog(
             "category_title": selected_category["category_title"],
             "currency_id": row.get("currency_id"),
             "member_id": selected_member["member_id"],
+            "account_id": selected_account["account_id"],
             "old_category_id": original_category_id,
         }
 
@@ -415,7 +505,22 @@ def open_edit_cost_dialog(
                     spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.END,
                 ),
-
+                ft.Row(
+                    [
+                        ft.Container(
+                            expand=True,
+                            content=account_field,
+                            on_click=choose_account
+                        ),
+                        action_picker_button(
+                            ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED,
+                            choose_account,
+                            "انتخاب حساب",
+                        ),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
                 ft.Row(
                     [
                         ft.Container(expand=True, content=category_field, on_click=choose_category),

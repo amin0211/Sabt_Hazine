@@ -1,7 +1,7 @@
 import os
 import json
 from openai import OpenAI
-from services.supabase_service import get_members
+from services.supabase_service import get_members, get_accounts
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -71,6 +71,30 @@ def get_member_names_cached(ttl=60):
 
     return names
 
+
+_ACCOUNTS_CACHE = {
+    "names": None,
+    "time": 0,
+}
+
+
+def get_account_names_cached(ttl=60):
+    import time
+
+    t = time.time()
+
+    if _ACCOUNTS_CACHE["names"] is not None and t - _ACCOUNTS_CACHE["time"] < ttl:
+        return _ACCOUNTS_CACHE["names"]
+
+    accounts = get_accounts()
+    names = [a["account_name"] for a in accounts if a.get("account_name")]
+
+    _ACCOUNTS_CACHE["names"] = names
+    _ACCOUNTS_CACHE["time"] = t
+
+    return names
+
+
 def normalize_expense(data: dict) -> dict:
     if not data:
         data = {}
@@ -80,15 +104,17 @@ def normalize_expense(data: dict) -> dict:
         "price": data.get("price"),
         "date": data.get("date"),
         "member_name": data.get("member_name"),
-        # 👇 سازگاری با کدهای قدیمی
-        "currency": data.get("currency", None),
+        "account_name": data.get("account_name"),
     }
+
 
 def extract_expense_fields_with_openai(text):
     if client is None:
         return None
 
     names = get_member_names_cached()
+
+    account_names = get_account_names_cached()
 
     text_n = (text or "").strip()
 
@@ -100,24 +126,42 @@ def extract_expense_fields_with_openai(text):
 
     known_names = possible_names[:10]
 
+    possible_accounts = [
+        a for a in account_names
+        if a and (a in text_n or text_n in a)
+    ]
+
+    known_accounts = possible_accounts[:10]
+
     system_prompt = f"""
-Extract expense data. Return ONLY valid JSON.
+    Extract expense data. Return ONLY valid JSON.
 
-Keys:
-title, price, date, member_name
+    Keys:
+    title, price, date, member_name, account_name
 
-Rules:
-- title: short clean name.
-- price: number only or null.
-- date: YYYY-MM-DD only if explicitly mentioned, else null.
-- member_name: explicit only, else null.
-- "خودم" => "self".
-- If close to known_names, return exact match.
-- Do not guess.
+    Rules:
+    - title: short clean name.
+    - price: number only or null.
+    - date: YYYY-MM-DD only if explicitly mentioned, else null.
+    - member_name: explicit only, else null.
+    - account_name: explicit payment/account source only, else null.
+    - "خودم" => "self".
+    - If member is close to known_names, return exact match.
+    - If account is close to known_accounts, return exact match.
+    - Do not guess.
 
-known_names:
-{known_names}
-"""
+    Account examples:
+    - "از حساب بانکیم" => bank account if matched in known_accounts.
+    - "با کش دادم" => cash account if matched in known_accounts.
+    - "از کارت اعتباری" => credit card account if matched in known_accounts.
+    - "از ولت" => wallet account if matched in known_accounts.
+
+    known_names:
+    {known_names}
+
+    known_accounts:
+    {known_accounts}
+    """
 
     try:
         response = client.chat.completions.create(

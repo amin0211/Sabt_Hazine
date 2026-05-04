@@ -1,10 +1,13 @@
 import flet as ft
+from datetime import date
 
 from services.supabase_service import (
     get_accounts,
     create_account,
     update_account,
     delete_account,
+    create_transfer,
+    get_account_balances,
 )
 
 
@@ -33,6 +36,29 @@ def accounts_view(page: ft.Page):
 
     message = ft.Text("", size=12)
 
+    transfer_message = ft.Text("", size=12, color=ft.Colors.RED)
+
+    from_account_dd = ft.Dropdown(label="From Account", expand=True)
+    to_account_dd = ft.Dropdown(label="To Account", expand=True)
+
+    transfer_amount = ft.TextField(
+        label="Amount",
+        keyboard_type=ft.KeyboardType.NUMBER,
+        expand=True,
+    )
+
+    transfer_date = ft.TextField(
+        label="Date",
+        value=date.today().isoformat(),
+        expand=True,
+    )
+
+    transfer_note = ft.TextField(
+        label="Description",
+        multiline=True,
+        min_lines=2,
+        max_lines=4,
+    )
 
     initial_balance = ft.TextField(
         label="Initial Balance",
@@ -41,16 +67,16 @@ def accounts_view(page: ft.Page):
         expand=True,
     )
 
-    currency = ft.Dropdown(
-        label="Currency",
-        value="CAD",
-        options=[
-            ft.dropdown.Option("CAD", "CAD"),
-            ft.dropdown.Option("USD", "USD"),
-            ft.dropdown.Option("IRR", "IRR"),
-        ],
-        expand=True,
-    )
+    # currency = ft.Dropdown(
+    #     label="Currency",
+    #     value="CAD",
+    #     options=[
+    #         ft.dropdown.Option("CAD", "CAD"),
+    #         ft.dropdown.Option("USD", "USD"),
+    #         ft.dropdown.Option("IRR", "IRR"),
+    #     ],
+    #     expand=True,
+    # )
 
     is_default = ft.Checkbox(
         label="Default account",
@@ -68,7 +94,7 @@ def accounts_view(page: ft.Page):
         account_type.value = "bank"
         account_name.value = "Bank"
         initial_balance.value = "0"
-        currency.value = "CAD"
+        # currency.value = "CAD"
         is_default.value = False
         message.value = ""
 
@@ -105,6 +131,114 @@ def accounts_view(page: ft.Page):
 
     account_type.on_blur = on_type_change
 
+    def load_transfer_accounts():
+        accounts = get_accounts()
+
+        options = [
+            ft.dropdown.Option(acc.get("id"), acc.get("account_name") or "")
+            for acc in accounts
+        ]
+
+        from_account_dd.options = options
+        to_account_dd.options = options
+
+        if accounts:
+            from_account_dd.value = accounts[0].get("id")
+            to_account_dd.value = accounts[1].get("id") if len(accounts) > 1 else None
+
+        
+    def save_transfer(e):
+        transfer_message.value = ""
+
+        if not from_account_dd.value or not to_account_dd.value:
+            transfer_message.value = "Please select both accounts."
+            safe_update()
+            return
+
+        if from_account_dd.value == to_account_dd.value:
+            transfer_message.value = "From and To accounts cannot be the same."
+            safe_update()
+            return
+
+        try:
+            amount = float(transfer_amount.value or 0)
+        except ValueError:
+            transfer_message.value = "Amount must be a number."
+            safe_update()
+            return
+
+        if amount <= 0:
+            transfer_message.value = "Amount must be greater than zero."
+            safe_update()
+            return
+
+        try:
+            create_transfer(
+                from_account_id=from_account_dd.value,
+                to_account_id=to_account_dd.value,
+                amount=amount,
+                transfer_date=transfer_date.value,
+                note=transfer_note.value,
+            )
+
+            transfer_amount.value = ""
+            transfer_note.value = ""
+            transfer_date.value = date.today().isoformat()
+
+            load_accounts()
+            message.value = "Transfer saved."
+            transfer_dialog.open = False
+
+        except Exception as ex:
+            transfer_message.value = f"Transfer error: {ex}"
+
+        safe_update()
+
+
+    transfer_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Transfer Money"),
+        content=ft.Column(
+            controls=[
+                from_account_dd,
+                to_account_dd,
+                transfer_amount,
+                transfer_date,
+                transfer_note,
+                transfer_message,
+            ],
+            tight=True,
+            spacing=10,
+        ),
+        actions=[
+            ft.TextButton(
+                "Cancel",
+                on_click=lambda e: close_transfer_dialog(),
+            ),
+            ft.ElevatedButton("Save Transfer", icon=ft.Icons.SWAP_HORIZ, on_click=save_transfer),
+        ],
+    )
+    print("CLICKED TRANSFER")
+    page.overlay.append(transfer_dialog)
+    print("CLICKED TRANSFER")
+
+    def open_transfer_dialog(e):
+        try:
+            load_transfer_accounts()
+            transfer_message.value = ""
+
+            page.dialog = transfer_dialog
+            transfer_dialog.open = True
+
+        except Exception as ex:
+            message.value = f"Transfer form error: {ex}"
+
+        safe_update()
+        
+    def close_transfer_dialog():
+        transfer_dialog.open = False
+        safe_update()
+        
     def load_accounts():
         accounts_column.controls.clear()
 
@@ -127,12 +261,17 @@ def accounts_view(page: ft.Page):
             )
             return
 
+
+        balances = get_account_balances()
+        balance_map = {b["account_id"]: b["balance"] for b in balances}
+
+
         for acc in accounts:
             account_id = acc.get("id")
             name = acc.get("account_name") or ""
             acc_type = acc.get("account_type") or "custom"
-            balance = acc.get("initial_balance", 0)
-            curr = acc.get("currency") or "CAD"
+            balance = balance_map.get(acc.get("id"), acc.get("initial_balance", 0))
+            # curr = acc.get("currency") or "CAD"
             default_value = bool(acc.get("is_default"))
 
             def edit_handler(e, account=acc):
@@ -140,7 +279,7 @@ def accounts_view(page: ft.Page):
                 account_type.value = account.get("account_type") or "custom"
                 account_name.value = account.get("account_name") or ""
                 initial_balance.value = str(account.get("initial_balance") or 0)
-                currency.value = account.get("currency") or "CAD"
+                # currency.value = account.get("currency") or "CAD"
                 is_default.value = bool(account.get("is_default"))
                 message.value = "Editing account..."
                 safe_update()
@@ -189,7 +328,7 @@ def accounts_view(page: ft.Page):
                                         color=ft.Colors.GREY,
                                     ),
                                     ft.Text(
-                                        f"{balance} {curr}",
+                                        f"{balance} ",
                                         size=13,
                                     ),
                                 ],
@@ -234,7 +373,7 @@ def accounts_view(page: ft.Page):
                     account_type=account_type.value,
                     account_name=name,
                     initial_balance=balance,
-                    currency=currency.value,
+                    # currency=currency.value,
                     is_default=bool(is_default.value),
                 )
                 message.value = "Account updated."
@@ -243,7 +382,7 @@ def accounts_view(page: ft.Page):
                     account_type=account_type.value,
                     account_name=name,
                     initial_balance=balance,
-                    currency=currency.value,
+                    # currency=currency.value,
                     is_default=bool(is_default.value),
                 )
                 message.value = "Account created."
@@ -283,7 +422,7 @@ def accounts_view(page: ft.Page):
                 ),
                 account_name,
                 initial_balance,
-                currency,
+                # currency,
                 is_default,
                 ft.Row(
                     controls=[
@@ -296,6 +435,12 @@ def accounts_view(page: ft.Page):
                             "Cancel",
                             on_click=cancel_edit,
                         ),
+                        ft.ElevatedButton(
+                            "Transfer",
+                            icon=ft.Icons.SWAP_HORIZ,
+                            on_click=open_transfer_dialog,
+                        ),
+
                     ],
                     spacing=10,
                 ),

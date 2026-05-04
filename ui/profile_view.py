@@ -8,7 +8,7 @@ from services.supabase_service import (
 
 
 def profile_view(page: ft.Page):
-    username = ft.TextField(label="Username", width=320)
+    # username = ft.TextField(label="Username", width=320)
     name = ft.TextField(label="Name", width=320)
     family = ft.TextField(label="Family", width=320)
     birthdate = ft.TextField(label="Birthdate (YYYY-MM-DD)", width=320)
@@ -63,7 +63,7 @@ def profile_view(page: ft.Page):
             show_message("Profile not found.")
             return
 
-        username.value = profile.get("username", "") or ""
+        # username.value = profile.get("username", "") or ""
         name.value = profile.get("name", "") or ""
         family.value = profile.get("family", "") or ""
         birthdate.value = profile.get("birthdate", "") or ""
@@ -85,7 +85,7 @@ def profile_view(page: ft.Page):
             selected_language_id = int(language_dropdown.value)
 
             update_my_profile({
-                "username": (username.value or "").strip(),
+                # "username": (username.value or "").strip(),
                 "name": (name.value or "").strip(),
                 "family": (family.value or "").strip(),
                 "birthdate": (birthdate.value or "").strip() or None,
@@ -117,7 +117,7 @@ def profile_view(page: ft.Page):
             ft.Container(height=10),
 
             email,
-            username,
+            # username,
             name,
             family,
             birthdate,

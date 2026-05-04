@@ -40,7 +40,7 @@ def get_my_profile():
 
     res = (
         supabase.table("profiles")
-        .select("id, email, username, name, family, birthdate, language_id")
+        .select("id, email, name, family, birthdate, language_id")
         .eq("id", user_id)
         .single()
         .execute()
@@ -56,7 +56,7 @@ def get_my_profile_with_language():
 
     res = (
         supabase.table("profiles")
-        .select("id, username, name, family, birthdate, language_id, languages(code, name, is_rtl)")
+        .select("id, name, family, birthdate, language_id, languages(code, name, is_rtl)")
         .eq("id", user_id)
         .single()
         .execute()
@@ -99,6 +99,30 @@ def update_my_profile(data: dict):
 
     res = supabase.table("profiles").update(data).eq("id", user_id).execute()
     return res.data
+
+def get_account_balances():
+    user = get_current_user()
+    res = supabase.rpc("get_account_balances", {"p_user_id": user.id}).execute()
+    return res.data or []
+
+
+def create_transfer(from_account_id, to_account_id, amount, transfer_date, note=None):
+    user = get_current_user()
+    if not user:
+        raise Exception("User not logged in")
+
+    data = {
+        "user_id": user.id,
+        "from_account_id": from_account_id,
+        "to_account_id": to_account_id,
+        "amount": amount,
+        "transfer_date": transfer_date,
+        "note": note,
+    }
+
+    res = supabase.table("transfer_transactions").insert(data).execute()
+    return res.data
+
 # ================= FAMILY MEMBERS =================
 def find_member_by_name(member_name: str):
     print("sssss")
@@ -416,103 +440,23 @@ def refresh_hazineha_titles_for_user(user_id: str, language_id: int):
         print(f"refresh_hazineha_titles_for_user error: {e}")
         raise
 
-    
+def create_default_account_for_user(user_id: str):
+    data = {
+        "user_id": user_id,
+        "account_type": "bank",
+        "account_name": "حساب اصلی",
+        "initial_balance": 0,
+        "is_default": True,
+        "is_active": True,
+    }
+
+    return supabase.table("accounts").insert(data).execute()
+
 def copy_hazineha_template_for_user(user_id: str):
-    try:
-        if not user_id:
-            raise Exception("user_id is required")
-
-        # اگر قبلاً ساخته شده، خروج
-        existing = (
-            supabase.table("hazineha")
-            .select("id")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        if existing.data:
-            return True
-
-        # گرفتن زبان کاربر
-        profile = (
-            supabase.table("profiles")
-            .select("language_id")
-            .eq("id", user_id)
-            .single()
-            .execute()
-            .data
-        )
-        language_id = profile.get("language_id") if profile else None
-
-        # گرفتن template ها
-        template_rows = (
-            supabase.table("hazineha_template")
-            .select("id,id_parent,title,keywords,embedding_text,is_active")
-            .order("id")
-            .execute()
-            .data
-        ) or []
-
-        if not template_rows:
-            return True
-
-        # گرفتن ترجمه‌ها
-        dic_rows = []
-        if language_id:
-            dic_rows = (
-                supabase.table("hazineha_dic")
-                .select("hazine_id,title")
-                .eq("language_id", language_id)
-                .execute()
-                .data
-            ) or []
-
-        # ساخت map ترجمه
-        dic_map = {row["hazine_id"]: row["title"] for row in dic_rows}
-
-        template_to_new_id = {}
-
-        # مرحله 1: insert بدون parent
-        for row in template_rows:
-            translated_title = dic_map.get(row["id"]) or row.get("title") or ""
-
-            payload = {
-                "user_id": user_id,
-                "id_parent": None,
-                "title": translated_title,
-                "template_id": row.get("id"),
-                "keywords": row.get("keywords") if isinstance(row.get("keywords"), list) else [],
-                "embedding_text": row.get("embedding_text") or "",
-                "is_active": bool(row.get("is_active", True)),
-            }
-
-            inserted = supabase.table("hazineha").insert(payload).execute().data
-            if not inserted:
-                raise Exception(f"Failed to copy template row {row.get('id')}")
-
-            new_row = inserted[0]
-            template_to_new_id[row["id"]] = new_row["id"]
-
-        # مرحله 2: تنظیم parent
-        for row in template_rows:
-            old_parent_id = row.get("id_parent")
-            if old_parent_id is None:
-                continue
-
-            new_child_id = template_to_new_id.get(row["id"])
-            new_parent_id = template_to_new_id.get(old_parent_id)
-
-            if new_child_id and new_parent_id:
-                supabase.table("hazineha").update({
-                    "id_parent": new_parent_id
-                }).eq("id", new_child_id).eq("user_id", user_id).execute()
-
-        clear_hazineha_cache()
-        return True
-
-    except Exception as e:
-        print(f"copy_hazineha_template_for_user error: {e}")
-        raise
+    return supabase.rpc(
+        "copy_hazineha_template_for_user",
+        {"p_user_id": user_id}
+    ).execute()
 
 
 # ================= HAZINEHA / CATEGORY =================
@@ -1094,9 +1038,13 @@ def get_my_cost_by_id(cost_id):
 
         res = (
             supabase.table("cost")
-            .select("*")
+            .select("""
+                *,
+                hazineha:id_hazine(title),
+                members:member_id(full_name),
+                accounts:account_id(account_name, account_type)
+            """)
             .eq("id", cost_id)
-            .eq("user_id", user.id)
             .single()
             .execute()
         )
@@ -1132,11 +1080,25 @@ def get_my_cost_by_id(cost_id):
                 .single()
                 .execute()
             )
-            member_row = member_res.data or {}
-            member_name = member_row.get("full_name", "")
+
+        member_row = member_res.data or {}
+        member_name = member_row.get("full_name", "")
+
+        account_name = ""
+        account_type = ""
+        account_id = row.get("account_id")
+
+        if account_id:
+            acc = find_account_by_id(account_id)
+            if acc:
+                account_name = acc.get("account_name", "")
+                account_type = acc.get("account_type", "")
 
         row["category_title"] = category_title
         row["member_name"] = member_name
+        row["account_name"] = account_name
+        row["account_type"] = account_type
+
 
         return row
 
@@ -1189,7 +1151,7 @@ def update_cost(cost_id, title, price, date_cost, id_hazine, member_id=None):
     row["category_title"] = cat.get("title", "") if cat else ""
     return row
 
-def update_my_cost(cost_id, title, price, date_cost, id_hazine, member_id=None):
+def update_my_cost(cost_id, title, price, date_cost, id_hazine, member_id=None, account_id=None):
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
@@ -1200,6 +1162,7 @@ def update_my_cost(cost_id, title, price, date_cost, id_hazine, member_id=None):
         "date_cost": date_cost,
         "id_hazine": id_hazine,
         "member_id": member_id,
+        "account_id": account_id,
     }).eq("id", cost_id).eq("user_id", user.id).execute()
 
     row = (
@@ -1237,6 +1200,19 @@ def update_my_cost(cost_id, title, price, date_cost, id_hazine, member_id=None):
 
     row["category_title"] = cat.get("title", "") if cat else ""
     row["member_name"] = member_name
+
+    account_name = ""
+    account_type = ""
+
+    if account_id:
+        acc = find_account_by_id(account_id)
+        if acc:
+            account_name = acc.get("account_name", "")
+            account_type = acc.get("account_type", "")
+
+    row["account_name"] = account_name
+    row["account_type"] = account_type
+
     return row
 
 def delete_cost(cost_id):
@@ -1332,17 +1308,71 @@ def get_hazine_id(title):
     )
     return res.data[0]["id"] if res.data else 0
 
-def get_currency_id(currency):
-    res = (
-        supabase.table("currency")
-        .select("id")
-        .eq("currency_type", currency)
-        .execute()
-    )
-    return res.data[0]["id"] if res.data else 1
+# def get_currency_id(currency):
+#     res = (
+#         supabase.table("currency")
+#         .select("id")
+#         .eq("currency_type", currency)
+#         .execute()
+#     )
+#     return res.data[0]["id"] if res.data else 1
 
 
 # --------------َAccounts ----------
+def find_account_by_name(account_name):
+    if not account_name:
+        return None
+
+    user = get_current_user()
+    if not user:
+        return None
+
+    res = (
+        supabase.table("accounts")
+        .select("*")
+        .eq("user_id", user.id)
+        .ilike("account_name", account_name)
+        .limit(1)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+def find_account_by_id(account_id):
+    if not account_id:
+        return None
+
+    user = get_current_user()
+    if not user:
+        return None
+
+    res = (
+        supabase.table("accounts")
+        .select("id, account_name, account_type")
+        .eq("id", account_id)
+        .eq("user_id", user.id)
+        .limit(1)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+def get_default_account():
+    user = get_current_user()
+    if not user:
+        return None
+
+    res = (
+        supabase.table("accounts")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_default", True)
+        .limit(1)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
 def get_accounts():
     user = get_current_user()
     if not user:
@@ -1359,7 +1389,8 @@ def get_accounts():
 
     return res.data or []
 
-def create_account(account_type, account_name, initial_balance, currency, is_default):
+def create_account(account_type, account_name, initial_balance, #currency, 
+                   is_default):
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
@@ -1378,7 +1409,7 @@ def create_account(account_type, account_name, initial_balance, currency, is_def
         "account_name": account_name,
         "keywords": keywords,
         "initial_balance": initial_balance,
-        "currency": currency,
+        # "currency": currency,
         "is_default": is_default,
         "is_active": True,
     }
@@ -1386,7 +1417,8 @@ def create_account(account_type, account_name, initial_balance, currency, is_def
     res = supabase.table("accounts").insert(payload).execute()
     return res.data[0] if res.data else None
 
-def update_account(account_id, account_type, account_name, initial_balance, currency, is_default):
+def update_account(account_id, account_type, account_name, initial_balance,# currency,
+                    is_default):
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
@@ -1404,7 +1436,7 @@ def update_account(account_id, account_type, account_name, initial_balance, curr
         "account_name": account_name,
         "keywords": keywords,
         "initial_balance": initial_balance,
-        "currency": currency,
+        # "currency": currency,
         "is_default": is_default,
     }
 

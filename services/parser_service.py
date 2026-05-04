@@ -106,31 +106,31 @@ def normalize_price_sign(text, price):
     return abs(price)
 
 
-def detect_currency(text: str):
-    text_n = normalize_text(text)
+# def detect_currency(text: str):
+#     text_n = normalize_text(text)
 
-    toman_words = ["تومن", "تومان", "tom an", "toman"]
-    rial_words = ["ریال", "rial", "iranian rial", "irr"]
-    dollar_words = ["دلار", "دالر", "usd", "dollar", "$"]
-    euro_words = ["یورو", "euro", "eur", "€"]
+#     toman_words = ["تومن", "تومان", "tom an", "toman"]
+#     rial_words = ["ریال", "rial", "iranian rial", "irr"]
+#     dollar_words = ["دلار", "دالر", "usd", "dollar", "$"]
+#     euro_words = ["یورو", "euro", "eur", "€"]
 
-    if any(w in text_n for w in toman_words):
-        return "TOMAN"
-    if any(w in text_n for w in rial_words):
-        return "RIAL"
-    if any(w in text_n for w in dollar_words):
-        return "USD"
-    if any(w in text_n for w in euro_words):
-        return "EUR"
+#     if any(w in text_n for w in toman_words):
+#         return "TOMAN"
+#     if any(w in text_n for w in rial_words):
+#         return "RIAL"
+#     if any(w in text_n for w in dollar_words):
+#         return "USD"
+#     if any(w in text_n for w in euro_words):
+#         return "EUR"
 
-    return None
+#     return None
 
 
 def fallback_result(text):
     return {
         "title": text,
         "price": None,
-        "currency": detect_currency(text),
+        # "currency": detect_currency(text),
         "date": None,
         "member_name": None,
         "category_id": None,
@@ -369,12 +369,12 @@ def parse_expense(text):
 
         title = (extracted.get("title") or text).strip()
         price = normalize_price_sign(text, extracted.get("price"))
-        currency = extracted.get("currency") or detect_currency(text)
+        # currency = extracted.get("currency") or detect_currency(text)
         date_value = extracted.get("date")
         member_name = extracted.get("member_name")
-
-        print("TITLE =", repr(title))
-        print("TITLE_N =", repr(normalize_text(title)))
+        account_name = extracted.get("account_name")
+        # print("TITLE =", repr(title))
+        # print("TITLE_N =", repr(normalize_text(title)))
 
 
         category_result = resolve_category_from_title(title)
@@ -383,9 +383,10 @@ def parse_expense(text):
         final_result = {
             "title": title,
             "price": price,
-            "currency": currency,
+            # "currency": currency,
             "date": date_value,
             "member_name": member_name,
+            "account_name": account_name,
             "category_id": category_result.get("category_id"),
             "category_title": category_result.get("category_title"),
             "matched": category_result.get("matched", False),

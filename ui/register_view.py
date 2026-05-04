@@ -4,8 +4,8 @@ import asyncio
 from services.supabase_service import (
     sign_up_user,
     update_profile,
-    # get_profile_by_username,
     copy_hazineha_template_for_user,
+    create_default_account_for_user,
     get_languages,
 )
 from services.utils import is_valid_email
@@ -30,7 +30,6 @@ def register_view(page: ft.Page):
         width=320
     )
 
-    username = ft.TextField(label="Username", width=320)
     name = ft.TextField(label="Name", width=320)
     family = ft.TextField(label="Family", width=320)
 
@@ -48,6 +47,29 @@ def register_view(page: ft.Page):
     )
 
     status_text = ft.Text("", color=ft.Colors.RED_400)
+
+    create_btn = ft.ElevatedButton(
+        content=ft.Text("Create Account"),
+        on_click=None,
+        width=320,
+    )
+
+    back_btn = ft.TextButton(
+        content=ft.Text("Back to Login"),
+        on_click=lambda e: page.app_go("login"),
+    )
+
+    def set_loading(is_loading: bool):
+        create_btn.disabled = is_loading
+        back_btn.disabled = is_loading
+
+        if is_loading:
+            status_text.value = "Creating account..."
+            status_text.color = ft.Colors.BLUE_400
+        else:
+            status_text.value = ""
+
+        page.update()
 
     def show_message(text, color=ft.Colors.RED_400):
         status_text.value = text
@@ -97,12 +119,11 @@ def register_view(page: ft.Page):
 
     language_dropdown.on_change = on_language_change
 
-    def register(e):
+    async def register_async(e):
         try:
             em = (email.value or "").strip().lower()
             pwd = password.value or ""
             cpwd = confirm_password.value or ""
-            uname = (username.value or "").strip()
             first_name = (name.value or "").strip()
             last_name = (family.value or "").strip()
             bdate = (birthdate.value or "").strip()
@@ -124,60 +145,66 @@ def register_view(page: ft.Page):
                 show_message("Password must be at least 6 characters.")
                 return
 
-            # existing_username = get_profile_by_username(uname)
-            # if existing_username:
-            #     show_message("Username already exists.")
-            #     return
+            set_loading(True)
 
-            auth_res = sign_up_user(em, pwd)
+            auth_res = await asyncio.to_thread(sign_up_user, em, pwd)
             user = auth_res.user
-            # print(f"11 = {user}")
 
             if not user:
+                set_loading(False)
                 show_message("Registration failed.")
                 return
 
-            update_profile(user.id, {
-                "username": uname,
-                "name": first_name,
-                "family": last_name,
-                "birthdate": bdate if bdate else None,
-                "language_id": int(selected_language_id) if selected_language_id else None,
-            })
+            await asyncio.to_thread(
+                update_profile,
+                user.id,
+                {
+                    "name": first_name,
+                    "family": last_name,
+                    "birthdate": bdate if bdate else None,
+                    "language_id": int(selected_language_id) if selected_language_id else None,
+                }
+            )
 
-            print("11111")
-            copy_hazineha_template_for_user(user.id)
+            # این باید همان تابع RPC باشد که در supabase_service تعریف کردی
+            await asyncio.to_thread(copy_hazineha_template_for_user, user.id)
+            
+            await asyncio.to_thread(create_default_account_for_user, user.id)
 
+            set_loading(False)
             page.app_go("login")
 
         except Exception as ex:
             print("REGISTER ERROR:", ex)
+            set_loading(False)
             show_message(f"Error: {ex}")
+
+    def register(e):
+        page.run_task(register_async, e)
+
+    create_btn.on_click = register
+
 
     view = ft.View(
         route="/register",
         controls=[
-            # ft.Container(height=10),
             ft.Text("Register", size=24, weight=ft.FontWeight.BOLD),
 
-            # ft.Container(height=4),
             language_dropdown,
 
             ft.Container(height=4),
             email,
             password,
             confirm_password,
-            # username,
             name,
             family,
             birthdate,
 
-            # ft.Container(height=10),
             status_text,
 
             ft.Container(height=10),
-            ft.ElevatedButton("Create Account", on_click=register, width=320),
-            ft.TextButton("Back to Login", on_click=lambda e: page.app_go("login")),
+            create_btn,
+            back_btn,
         ],
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )
