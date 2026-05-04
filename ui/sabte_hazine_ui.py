@@ -15,6 +15,8 @@ from services.supabase_service import (
     add_member,
     get_financial_summary,
     get_income_transactions_by_month,
+    get_my_profile,
+    get_current_user,
 )
 from services.openai_service import get_embedding
 from services.parser_service import normalize_text
@@ -28,7 +30,6 @@ def now_local():
 
 def today_local():
     return now_local().date()
-
 
 def build_chat_ui(
     page,
@@ -65,6 +66,25 @@ def build_chat_ui(
         expand=True,
         scroll=ft.ScrollMode.ALWAYS,
     )
+
+    async def check_user_session():
+        stored_user_id = await page.shared_preferences.get("user_id")
+
+        auth_user = get_current_user()
+        current_user_id = auth_user.id if auth_user else None
+        # current_user_Email = auth_user.email
+
+        # print("eeeeeeee =", current_user_Email)
+        # print("STORED USER ID =", stored_user_id)
+        # print("AUTH USER ID =", current_user_id)
+
+        if stored_user_id and current_user_id and stored_user_id != current_user_id:
+            print("❌ USER MISMATCH - clearing local state")
+            await page.shared_preferences.clear()
+            page.data = {}
+            page.app_go("login")
+            safe_page_update(page)
+
 
 
     def remove_empty_state():
@@ -195,11 +215,13 @@ def build_chat_ui(
             print("logout error:", ex)
 
         try:
-            page.client_storage.clear()
-        except:
-            pass
+            page.shared_preferences.clear()
+        except Exception as ex:
+            print("shared_preferences clear error:", ex)
 
+        page.data = {}
         page.app_go("login")
+
 
     voice_state = {
         "is_recording": False,
@@ -589,79 +611,6 @@ def build_chat_ui(
         )
 
 
-    summary_card = ft.Container(
-        padding=16,
-        border_radius=24,
-        bgcolor="#FFFFFF",
-        border=ft.border.all(1, "#E5E7EB"),
-        shadow=ft.BoxShadow(
-            blur_radius=18,
-            spread_radius=0,
-            color="#18000000",
-            offset=ft.Offset(0, 6),
-        ),
-        content=ft.Column(
-            [
-                ft.Row(
-                    [
-                        ft.Column(
-                            [
-                                ft.Text(
-                                    "Total Balance",
-                                    size=12,
-                                    color="#6B7280",
-                                    weight=ft.FontWeight.W_500,
-                                ),
-                                summary_balance,
-                            ],
-                            spacing=2,
-                            expand=True,
-                        ),
-                        ft.Container(
-                            width=44,
-                            height=44,
-                            border_radius=16,
-                            bgcolor="#EEF2FF",
-                            alignment=ft.Alignment.CENTER,
-                            content=ft.Icon(
-                                ft.Icons.ACCOUNT_BALANCE_WALLET_ROUNDED,
-                                color=PRIMARY,
-                                size=22,
-                            ),
-                        ),
-                    ],
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-
-                ft.Container(height=1, bgcolor="#F3F4F6"),
-
-                ft.Row(
-                    [
-                        build_summary_item(
-                            "Income",
-                            summary_income,
-                            ft.Icons.SOUTH_WEST_ROUNDED,
-                            "#16A34A",
-                        ),
-                        build_summary_item(
-                            "Expense",
-                            summary_expense,
-                            ft.Icons.NORTH_EAST_ROUNDED,
-                            "#DC2626",
-                        ),
-                        build_summary_item(
-                            "Left",
-                            summary_left,
-                            ft.Icons.SAVINGS_OUTLINED,
-                            PRIMARY,
-                        ),
-                    ],
-                    spacing=8,
-                ),
-            ],
-            spacing=14,
-        ),
-    )
 
     summary_card = ft.Container(
         padding=14,
@@ -678,6 +627,7 @@ def build_chat_ui(
                                     [
                                         ft.Text("Total Balance", size=12, color="#6B7280"),
                                         summary_month_text,
+                                        # ft.Text(current_user_Email, size=12, color="#6B7280"),
                                     ],
                                     spacing=6,
                                 ),
@@ -1080,6 +1030,8 @@ def build_chat_ui(
     
     page.data = page.data or {}
     page.data["is_recording"] = False
+    
+    page.run_task(check_user_session)
 
     send_state = {
         "loading": False

@@ -25,29 +25,23 @@ def login_view(page: ft.Page):
 
     async def login_async(e):
         try:
-            print("aa  ")
             em = (email.value or "").strip().lower()
             pwd = password.value or ""
 
-            print("aa 1 ")
             if not em or not pwd:
                 show_message("Email and password are required.")
                 return
 
-            print("aa  2")
             auth_res = sign_in_user(em, pwd)
             user = auth_res.user
             session = auth_res.session
 
-            print("aa  3")
             if not user or not session:
                 show_message("Login failed.")
                 return
 
-            print("aa  4")
             profile = get_profile(user.id)
 
-            print("aa  5")
             await page.shared_preferences.set("access_token", session.access_token)
             await page.shared_preferences.set("refresh_token", session.refresh_token)
             await page.shared_preferences.set("user_id", user.id)
