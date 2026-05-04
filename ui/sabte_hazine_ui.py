@@ -75,8 +75,8 @@ def build_chat_ui(
         # current_user_Email = auth_user.email
 
         # print("eeeeeeee =", current_user_Email)
-        # print("STORED USER ID =", stored_user_id)
-        # print("AUTH USER ID =", current_user_id)
+        print("STORED USER ID =", stored_user_id)
+        print("AUTH USER ID =", current_user_id)
 
         if stored_user_id and current_user_id and stored_user_id != current_user_id:
             print("❌ USER MISMATCH - clearing local state")
