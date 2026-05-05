@@ -1,10 +1,10 @@
 translations = {
     "fa": {
         "profile": "پروفایل",
-        "members": "اعضای",
+        "members": "اعضا",
         "dashboard": "داشبور",
-        "Accounts": "تعریف حسابها",
-        "Income": "ورود درآمد",
+        "Accounts": "حسابها",
+        "Income": "ثبت درآمد",
         "Budget": "بودجه بندی",
         "Categories": "طبقه بندی هزینه ها",
         "GanttChart": "نمودارها",

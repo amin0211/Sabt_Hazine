@@ -112,10 +112,28 @@ def get_account_transactions(account_id):
 
     rows = []
 
-    # هزینه‌ها
+    categories = (
+        supabase.table("hazineha")
+        .select("id,title")
+        .eq("user_id", user.id)
+        .execute()
+        .data
+    ) or []
+
+    members = (
+        supabase.table("members")
+        .select("id,full_name")
+        .eq("user_id", user.id)
+        .execute()
+        .data
+    ) or []
+
+    category_map = {c["id"]: c.get("title") or "" for c in categories}
+    member_map = {m["id"]: m.get("full_name") or "" for m in members}
+
     costs = (
         supabase.table("cost")
-        .select("id,title,price,date_cost")
+        .select("id,title,price,date_cost,id_hazine,member_id")
         .eq("user_id", user.id)
         .eq("account_id", account_id)
         .execute()
@@ -128,9 +146,12 @@ def get_account_transactions(account_id):
             "title": c.get("title") or "Expense",
             "amount": -float(c.get("price") or 0),
             "type": "expense",
+            "category_id": c.get("id_hazine"),
+            "category_title": category_map.get(c.get("id_hazine"), ""),
+            "member_id": c.get("member_id"),
+            "member_name": member_map.get(c.get("member_id"), ""),
         })
 
-    # درآمدها
     incomes = (
         supabase.table("income_transactions")
         .select("id,title,amount,transaction_date,status")
@@ -147,9 +168,12 @@ def get_account_transactions(account_id):
             "title": i.get("title") or "Income",
             "amount": float(i.get("amount") or 0),
             "type": "income",
+            "category_id": None,
+            "category_title": "",
+            "member_id": None,
+            "member_name": "",
         })
 
-    # انتقال‌ها - خروجی از حساب
     transfers_out = (
         supabase.table("transfer_transactions")
         .select("id,amount,transfer_date,note")
@@ -165,9 +189,12 @@ def get_account_transactions(account_id):
             "title": t.get("note") or "Transfer Out",
             "amount": -float(t.get("amount") or 0),
             "type": "transfer_out",
+            "category_id": None,
+            "category_title": "",
+            "member_id": None,
+            "member_name": "",
         })
 
-    # انتقال‌ها - ورودی به حساب
     transfers_in = (
         supabase.table("transfer_transactions")
         .select("id,amount,transfer_date,note")
@@ -183,10 +210,15 @@ def get_account_transactions(account_id):
             "title": t.get("note") or "Transfer In",
             "amount": float(t.get("amount") or 0),
             "type": "transfer_in",
+            "category_id": None,
+            "category_title": "",
+            "member_id": None,
+            "member_name": "",
         })
 
     rows.sort(key=lambda x: x.get("date") or "", reverse=True)
     return rows
+
 
 def create_transfer(from_account_id, to_account_id, amount, transfer_date, note=None):
     user = get_current_user()

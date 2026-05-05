@@ -130,12 +130,12 @@ def build_chat_ui(
             tooltip="منو",
             items=[
                 ft.PopupMenuItem(
-                    icon=ft.Icons.PERSON_OUTLINE,
+                    icon=ft.Icons.ACCOUNT_BALANCE,
                     content=ft.Container(
                         width=150,
-                        content=ft.Text(t(page, "profile")),
+                        content=ft.Text(t(page, "Accounts")),
                     ),
-                    on_click=lambda e: page.app_go("profile"),
+                    on_click=lambda e: page.app_go("accounts"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.GROUPS_OUTLINED,
@@ -144,22 +144,6 @@ def build_chat_ui(
                         content=ft.Text(t(page, "members")),
                     ),
                     on_click=lambda e: page.app_go("members"),
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.ANALYTICS_OUTLINED,
-                    content=ft.Container(
-                        width=150,
-                        content=ft.Text(t(page, "dashboard")),
-                    ),
-                    on_click=lambda e: page.app_go("dashboard_view"),
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.ACCOUNT_BALANCE,
-                    content=ft.Container(
-                        width=150,
-                        content=ft.Text(t(page, "Accounts")),
-                    ),
-                    on_click=lambda e: page.app_go("accounts"),
                 ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
@@ -176,6 +160,14 @@ def build_chat_ui(
                         content=ft.Text(t(page, "Budget")),
                     ),
                     on_click=lambda e: page.app_go("budget_view"),
+                ),
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ANALYTICS_OUTLINED,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "dashboard")),
+                    ),
+                    on_click=lambda e: page.app_go("dashboard_view"),
                 ),
 
                 ft.PopupMenuItem(
@@ -197,6 +189,16 @@ def build_chat_ui(
                 ),
 
                 ft.PopupMenuItem(),
+
+                ft.PopupMenuItem(
+                    icon=ft.Icons.PERSON_OUTLINE,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "profile")),
+                    ),
+                    on_click=lambda e: page.app_go("profile"),
+                ),
+
                 ft.PopupMenuItem(
                     icon=ft.Icons.LOGOUT_ROUNDED,
                     content=ft.Container(
@@ -753,12 +755,55 @@ def build_chat_ui(
     def create_message(row):
         
         is_invalid = not row.get("id_hazine")
+
         def delete_message(e):
-            page.data["sabtehazine_changed"] = True
-            supabase_service.delete_my_cost(row["id"])
-            chat_column.controls.remove(container)
-            page.update() 
-            
+            confirm_dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Delete expense?"),
+                content=ft.Text("This action cannot be undone."),
+                actions=[
+                    ft.TextButton(
+                        "Cancel",
+                        on_click=lambda e: close_confirm()
+                    ),
+                    ft.TextButton(
+                        "Delete",
+                        style=ft.ButtonStyle(color="#DC2626"),
+                        on_click=lambda e: confirm_delete()
+                    ),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+
+            def close_confirm():
+                confirm_dlg.open = False
+                safe_page_update(page)
+
+            def confirm_delete():
+                try:
+                    page.data["sabtehazine_changed"] = True
+                    supabase_service.delete_my_cost(row["id"])
+
+                    if container in chat_column.controls:
+                        chat_column.controls.remove(container)
+
+                    refresh_summary()
+
+                    if not chat_column.controls:
+                        chat_column.controls.append(build_empty_state())
+
+                except Exception as ex:
+                    print("delete cost error:", ex)
+
+                confirm_dlg.open = False
+                safe_page_update(page)
+
+            if confirm_dlg not in page.overlay:
+                page.overlay.append(confirm_dlg)
+
+            confirm_dlg.open = True
+            safe_page_update(page)
+                    
         def edit_message(e):
             def on_save(updated_data):
                 page.data["sabtehazine_changed"] = True

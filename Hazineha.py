@@ -160,6 +160,9 @@ def hazinaha_view(page: ft.Page):
         if page.data.get("from") == "edit_cost_dialog":
             return "edit_cost_dialog"   # 👈 مهم
 
+        if page.data.get("from") == "accounts":
+            return "accounts"
+
         return "sabtehazine"
 
     def go_back(e):
@@ -204,7 +207,14 @@ def hazinaha_view(page: ft.Page):
             page.data["sabtehazine_loaded"] = False
             page.data["sabtehazine_changed"] = True
 
+
+
             page.app_go("sabtehazine")
+            return
+
+        if page.data.get("from") == "accounts":
+            page.data["reopen_account_filter_dialog"] = True
+            page.app_go("accounts")
             return
 
         page.app_go(get_from_view())
