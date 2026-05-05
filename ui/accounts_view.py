@@ -8,6 +8,7 @@ from services.supabase_service import (
     delete_account,
     create_transfer,
     get_account_balances,
+    get_account_transactions,
 )
 
 
@@ -82,6 +83,83 @@ def accounts_view(page: ft.Page):
         label="Default account",
         value=False,
     )
+
+    def close_account_transactions_dialog(dialog):
+        dialog.open = False
+        safe_update()
+
+
+    def open_account_transactions(account_id):
+        try:
+            transactions = get_account_transactions(account_id)
+
+            items = []
+
+            if not transactions:
+                items.append(ft.Text("No transactions found."))
+            else:
+                for t in transactions:
+                    amount = float(t.get("amount") or 0)
+
+                    items.append(
+                        ft.Container(
+                            padding=8,
+                            border_radius=8,
+                            bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+                            content=ft.Row(
+                                controls=[
+                                    ft.Text(t.get("date") or "", size=11, width=90),
+                                    ft.Column(
+                                        controls=[
+                                            ft.Text(t.get("title") or "", size=13),
+                                            ft.Text(t.get("type") or "", size=10, color=ft.Colors.GREY),
+                                        ],
+                                        spacing=2,
+                                        expand=True,
+                                    ),
+                                    ft.Text(
+                                        f"{amount:,.2f}",
+                                        size=13,
+                                        weight=ft.FontWeight.BOLD,
+                                    ),
+                                ],
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                        )
+                    )
+
+            dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Account Transactions"),
+                content=ft.Container(
+                    width=420,
+                    height=420,
+                    content=ft.Column(
+                        controls=items,
+                        scroll=ft.ScrollMode.AUTO,
+                        spacing=8,
+                    ),
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Close",
+                        on_click=lambda e: close_account_transactions_dialog(dialog),
+                    )
+                ],
+            )
+
+            page.overlay.append(dialog)
+            dialog.open = True
+            safe_update()
+
+        except Exception as ex:
+            message.value = f"Error loading transactions: {ex}"
+            safe_update()
+
+
+    def close_dialog(dialog):
+        dialog.open = False
+        page.update()
 
     def safe_update():
         try:
@@ -263,14 +341,14 @@ def accounts_view(page: ft.Page):
 
 
         balances = get_account_balances()
-        balance_map = {b["account_id"]: b["balance"] for b in balances}
+        balance_map = {b["out_account_id"]: b["out_balance"] for b in balances}
 
 
         for acc in accounts:
             account_id = acc.get("id")
             name = acc.get("account_name") or ""
             acc_type = acc.get("account_type") or "custom"
-            balance = balance_map.get(acc.get("id"), acc.get("initial_balance", 0))
+            balance = balance_map.get(account_id, acc.get("initial_balance", 0))
             # curr = acc.get("currency") or "CAD"
             default_value = bool(acc.get("is_default"))
 
@@ -345,6 +423,11 @@ def accounts_view(page: ft.Page):
                                 tooltip="Delete",
                                 on_click=delete_handler,
                             ),
+                            ft.IconButton(
+                                icon=ft.Icons.LIST_ALT,
+                                tooltip="Account Transactions",
+                                on_click=lambda e, acc_id=account_id: open_account_transactions(acc_id),
+                            ),                            
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),

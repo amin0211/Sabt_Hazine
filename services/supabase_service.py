@@ -105,6 +105,88 @@ def get_account_balances():
     res = supabase.rpc("get_account_balances", {"p_user_id": user.id}).execute()
     return res.data or []
 
+def get_account_transactions(account_id):
+    user = get_current_user()
+    if not user:
+        return []
+
+    rows = []
+
+    # هزینه‌ها
+    costs = (
+        supabase.table("cost")
+        .select("id,title,price,date_cost")
+        .eq("user_id", user.id)
+        .eq("account_id", account_id)
+        .execute()
+        .data
+    ) or []
+
+    for c in costs:
+        rows.append({
+            "date": c.get("date_cost"),
+            "title": c.get("title") or "Expense",
+            "amount": -float(c.get("price") or 0),
+            "type": "expense",
+        })
+
+    # درآمدها
+    incomes = (
+        supabase.table("income_transactions")
+        .select("id,title,amount,transaction_date,status")
+        .eq("user_id", user.id)
+        .eq("account_id", account_id)
+        .eq("is_active", True)
+        .execute()
+        .data
+    ) or []
+
+    for i in incomes:
+        rows.append({
+            "date": i.get("transaction_date"),
+            "title": i.get("title") or "Income",
+            "amount": float(i.get("amount") or 0),
+            "type": "income",
+        })
+
+    # انتقال‌ها - خروجی از حساب
+    transfers_out = (
+        supabase.table("transfer_transactions")
+        .select("id,amount,transfer_date,note")
+        .eq("user_id", user.id)
+        .eq("from_account_id", account_id)
+        .execute()
+        .data
+    ) or []
+
+    for t in transfers_out:
+        rows.append({
+            "date": t.get("transfer_date"),
+            "title": t.get("note") or "Transfer Out",
+            "amount": -float(t.get("amount") or 0),
+            "type": "transfer_out",
+        })
+
+    # انتقال‌ها - ورودی به حساب
+    transfers_in = (
+        supabase.table("transfer_transactions")
+        .select("id,amount,transfer_date,note")
+        .eq("user_id", user.id)
+        .eq("to_account_id", account_id)
+        .execute()
+        .data
+    ) or []
+
+    for t in transfers_in:
+        rows.append({
+            "date": t.get("transfer_date"),
+            "title": t.get("note") or "Transfer In",
+            "amount": float(t.get("amount") or 0),
+            "type": "transfer_in",
+        })
+
+    rows.sort(key=lambda x: x.get("date") or "", reverse=True)
+    return rows
 
 def create_transfer(from_account_id, to_account_id, amount, transfer_date, note=None):
     user = get_current_user()

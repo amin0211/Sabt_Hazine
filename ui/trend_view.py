@@ -627,7 +627,7 @@ def trend_view(page: ft.Page):
 
     selected_tab = {"value": "spending"}
 
-    selected_category = {
+    selected_category = page.data.get("trend_selected_category") or {
         "category_id": None,
         "category_title": "All categories",
     }
@@ -771,6 +771,7 @@ def trend_view(page: ft.Page):
             ft.Icons.ACCOUNT_TREE_OUTLINED,
         )
     )
+    # restore UI
 
     def refresh_category_button():
         category_btn.content = build_filter_button(
@@ -778,13 +779,18 @@ def trend_view(page: ft.Page):
             ft.Icons.ACCOUNT_TREE_OUTLINED,
         )
 
+    refresh_category_button()
+
     def on_category_selected(result: dict):
         selected_category["category_id"] = result.get("category_id")
         selected_category["category_title"] = result.get("category_title") or "All categories"
 
+        # ✅ ذخیره در state
+        page.data["trend_selected_category"] = selected_category
+
         refresh_category_button()
         refresh()
-
+        
     def choose_category(e=None):
         page.data["without_edit"] = True
         page.data["category_picker_mode"] = True
@@ -1005,8 +1011,14 @@ def trend_view(page: ft.Page):
             spacing=8,
             wrap=True,
         )
-
+    
     def refresh():
+        # ✅ restore category
+        saved = page.data.get("trend_selected_category")
+        if saved:
+            selected_category.update(saved)
+            refresh_category_button()
+
         read_filters()
         tabs_holder.content = build_tabs_row()
         content_container.content = build_current_page()

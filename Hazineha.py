@@ -1349,7 +1349,16 @@ def hazinaha_view(page: ft.Page):
                         filter_bar,
                         search_box,
                         tree_shell,
-                        picker_action_bar,
+
+                        ft.SafeArea(
+                            avoid_intrusions_top=False,
+                            avoid_intrusions_left=False,
+                            avoid_intrusions_right=False,
+                            avoid_intrusions_bottom=True,
+                            maintain_bottom_view_padding=True,
+                            minimum_padding=ft.padding.only(bottom=8),
+                            content=picker_action_bar,
+                        ),
                     ],
                     spacing=10,
                     expand=True,

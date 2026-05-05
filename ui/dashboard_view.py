@@ -257,15 +257,6 @@ def dashboard_view(page: ft.Page):
                             content=ft.Text("Categories"),
                             on_click=open_hazinaha_view,
                         ),                   
-                    ],
-                    spacing=8,
-                ),
-                ft.Row(
-                    [
-                        # ft.ElevatedButton(
-                        #     content=ft.Text("Transactions"),
-                        #     on_click=lambda e: page.app_go("transaction_report"),
-                        # ),
                         ft.ElevatedButton(
                             content=ft.Text("Trends"),
                             on_click=lambda e: page.app_go("trend_view"),
@@ -273,6 +264,15 @@ def dashboard_view(page: ft.Page):
                     ],
                     spacing=8,
                 ),
+                # ft.Row(
+                #     [
+                        # ft.ElevatedButton(
+                        #     content=ft.Text("Transactions"),
+                        #     on_click=lambda e: page.app_go("transaction_report"),
+                        # ),
+                    # ],
+                    # spacing=8,
+                # ),
             ],
             spacing=10,
         ),
@@ -288,7 +288,16 @@ def dashboard_view(page: ft.Page):
                 progress_card,
                 forecast_card,
                 insights_card,
-                report_buttons,
+
+                ft.SafeArea(
+                    avoid_intrusions_top=False,
+                    avoid_intrusions_left=False,
+                    avoid_intrusions_right=False,
+                    avoid_intrusions_bottom=True,
+                    maintain_bottom_view_padding=True,
+                    minimum_padding=ft.padding.only(bottom=12),
+                    content=report_buttons,
+                ),
             ],
             spacing=12,
             scroll=ft.ScrollMode.AUTO,
