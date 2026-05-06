@@ -134,7 +134,17 @@ def hazinaha_view(page: ft.Page):
     if not isinstance(page.data, dict):
         page.data = {}
 
-    picker_mode = page.data.get("category_picker_mode", False)
+    from_view = page.data.get("from")
+
+    picker_mode = (
+        page.data.get("category_picker_mode") == True
+        and from_view != "sabtehazine"   # 👈 فقط منو رو حذف کن
+    )
+
+    # اگر از منو اومده → picker خاموش
+    if from_view == "sabtehazine":
+        page.data["category_picker_mode"] = False    
+        
     current_category_id = page.data.get("category_picker_current_id")
     
     without_edit = page.data.get("without_edit") == True
@@ -151,6 +161,9 @@ def hazinaha_view(page: ft.Page):
     #     return "/sabtehazine"
 
     def get_from_view():
+
+        print(f"111 = {page.data.get("from")}")
+
         if page.data.get("from") == "dashboard_view":
             return "dashboard_view"
 
@@ -165,21 +178,51 @@ def hazinaha_view(page: ft.Page):
 
         return "sabtehazine"
 
+
     def go_back(e):
         from_view = page.data.get("from")
 
+        print(f"111 = {from_view}")
+
         if from_view == "edit_cost_dialog":
-            dialog_ref = page.data.get("edit_cost_dialog_ref")
-
+            page.data["reopen_edit_cost_dialog"] = True
+            page.data["sabtehazine_loaded"] = False
+            page.data["sabtehazine_changed"] = True
+            page.data.pop("sabtehazine_view_cache", None)
             page.app_go("sabtehazine")
-
-            if dialog_ref:
-                dialog_ref.open = True
-                page.update()
-
+            page.app_go("sabtehazine")
             return
 
-        page.app_go(get_from_view())
+        if from_view == "accounts":
+            page.data["reopen_account_filter_dialog"] = True
+            page.data["category_picker_mode"] = False
+            page.app_go("accounts")
+            return
+
+        if from_view == "trend_view":
+            page.data["category_picker_mode"] = False
+            page.data["reopen_trend_filter_dialog"] = True   # اگر در trend از این flag استفاده می‌کنی
+            page.data["trend_changed"] = True                # اگر trend cache داری
+            page.data.pop("trend_view_cache", None)
+
+            page.app_go("trend_view")
+            return
+        
+        if from_view == "dashboard_view":
+            page.data["category_picker_mode"] = False
+
+            # اگر از dashboard هم چیزی باید reopen شود
+            page.data["reopen_dashboard"] = True   # اختیاری، اگر لازم داری
+
+            # اگر dashboard cache داری
+            page.data.pop("dashboard_view_cache", None)
+
+            page.app_go("dashboard_view")
+            return        
+
+        page.data["category_picker_mode"] = False
+        page.app_go("sabtehazine")
+
 
     def confirm_category_pick(e=None):
         selected_node_id = selected_id["value"]
@@ -1318,7 +1361,7 @@ def hazinaha_view(page: ft.Page):
     rebuild_tree(update_page=False)
 
     picker_action_bar = ft.Container(
-        visible=picker_mode,
+        # visible=picker_mode,
         bgcolor="#FFFFFF",
         border=ft.border.all(1, BORDER),
         border_radius=16,
@@ -1361,6 +1404,7 @@ def hazinaha_view(page: ft.Page):
                         tree_shell,
 
                         ft.SafeArea(
+                            visible=picker_mode,
                             avoid_intrusions_top=False,
                             avoid_intrusions_left=False,
                             avoid_intrusions_right=False,

@@ -124,6 +124,17 @@ def build_chat_ui(
         box.data = "empty_state"
         return box
 
+    def open_hazineha_from_menu():
+        page.data = page.data or {}
+
+        page.data["from"] = "sabtehazine"
+        page.data["category_picker_mode"] = False
+        page.data["category_picker_on_selected"] = None
+        page.data["category_picker_current_id"] = None
+        page.data["without_edit"] = False
+
+        page.app_go("hazinaha_view")
+
     def build_main_menu():
         return ft.PopupMenuButton(
             icon=ft.Icons.MORE_VERT,
@@ -176,7 +187,7 @@ def build_chat_ui(
                         width=150,
                         content=ft.Text(t(page, "Categories")),
                     ),
-                    on_click=lambda e: page.app_go("hazinaha_view"),
+                    on_click=lambda e: open_hazineha_from_menu(),
                 ),
 
                 ft.PopupMenuItem(
@@ -749,6 +760,7 @@ def build_chat_ui(
         page.data["category_picker_mode"] = True
         page.data["category_picker_current_id"] = current_category_id
         page.data["category_picker_on_selected"] = on_selected
+        page.data["from"] = "edit_cost_dialog"
 
         page.app_go("hazinaha_view")
                 
@@ -1216,6 +1228,9 @@ def build_chat_ui(
         page.run_task(load_messages_async)
         page.data["sabtehazine_loaded"] = True
             # load_messages()
+
+    print("REOPEN FLAG =", page.data.get("reopen_edit_cost_dialog"))
+    print("EDIT ROW =", page.data.get("edit_cost_row"))
 
     if isinstance(page.data, dict) and page.data.get("reopen_edit_cost_dialog"):
         page.data["reopen_edit_cost_dialog"] = False
