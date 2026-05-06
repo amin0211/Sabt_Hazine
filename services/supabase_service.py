@@ -1143,27 +1143,22 @@ def get_cost_by_id(cost_id):
         print("get_cost_by_id error:", e)
         return None
 
-
 def get_my_cost_by_id(cost_id):
     try:
         user = get_current_user()
         if not user:
             return None
 
-        res = (
+        row = (
             supabase.table("cost")
-            .select("""
-                *,
-                hazineha:id_hazine(title),
-                members:member_id(full_name),
-                accounts:account_id(account_name, account_type)
-            """)
+            .select("*")
             .eq("id", cost_id)
+            .eq("user_id", user.id)
             .single()
             .execute()
+            .data
         )
 
-        row = res.data
         if not row:
             return None
 
@@ -1171,32 +1166,31 @@ def get_my_cost_by_id(cost_id):
         category_id = row.get("id_hazine")
 
         if category_id:
-            cat_res = (
+            cat = (
                 supabase.table("hazineha")
                 .select("title")
                 .eq("id", category_id)
                 .eq("user_id", user.id)
-                .single()
+                .limit(1)
                 .execute()
+                .data
             )
-            cat_row = cat_res.data or {}
-            category_title = cat_row.get("title", "")
+            category_title = cat[0].get("title", "") if cat else ""
 
         member_name = ""
         member_id = row.get("member_id")
 
         if member_id:
-            member_res = (
+            member = (
                 supabase.table("members")
                 .select("full_name")
                 .eq("id", member_id)
                 .eq("user_id", user.id)
-                .single()
+                .limit(1)
                 .execute()
+                .data
             )
-
-        member_row = member_res.data or {}
-        member_name = member_row.get("full_name", "")
+            member_name = member[0].get("full_name", "") if member else ""
 
         account_name = ""
         account_type = ""
@@ -1213,12 +1207,12 @@ def get_my_cost_by_id(cost_id):
         row["account_name"] = account_name
         row["account_type"] = account_type
 
-
         return row
 
     except Exception as e:
         print("get_my_cost_by_id error:", e)
         return None
+
 
 def insert_cost(data):
     return supabase.table("cost").insert(data).execute().data[0]
