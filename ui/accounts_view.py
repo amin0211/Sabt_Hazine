@@ -102,10 +102,7 @@ def accounts_view(page: ft.Page):
         border_radius=14,
     )
 
-    is_default = ft.Checkbox(
-        label="Default account",
-        value=False,
-    )
+    is_default = ft.Checkbox(label="Default account", value=False)
 
     account_type = ft.Dropdown(
         label="Account Type",
@@ -158,6 +155,7 @@ def accounts_view(page: ft.Page):
         reset_form()
         form_title.value = "Add New Account"
         form_subtitle.value = "Create a new account to track your money."
+        form_icon.bgcolor = "#DBEAFE"
         form_icon.content = ft.Icon(ft.Icons.ADD, color="#2563EB", size=24)
         form_card.visible = True
         safe_update()
@@ -173,7 +171,6 @@ def accounts_view(page: ft.Page):
 
     def load_transfer_accounts():
         accounts = get_accounts()
-
         options = [
             ft.dropdown.Option(acc.get("id"), acc.get("account_name") or "")
             for acc in accounts
@@ -292,10 +289,7 @@ def accounts_view(page: ft.Page):
             ),
         ),
         actions=[
-            ft.TextButton(
-                "Cancel",
-                on_click=lambda e: close_transfer_dialog(),
-            ),
+            ft.TextButton("Cancel", on_click=lambda e: close_transfer_dialog()),
             ft.ElevatedButton(
                 "Save Transfer",
                 icon=ft.Icons.CHECK,
@@ -420,7 +414,9 @@ def accounts_view(page: ft.Page):
                                         bgcolor="#DCFCE7" if is_positive else "#FEE2E2",
                                         alignment=ft.Alignment.CENTER,
                                         content=ft.Icon(
-                                            ft.Icons.ARROW_DOWNWARD if is_positive else ft.Icons.ARROW_UPWARD,
+                                            ft.Icons.ARROW_DOWNWARD
+                                            if is_positive
+                                            else ft.Icons.ARROW_UPWARD,
                                             size=18,
                                             color="#16A34A" if is_positive else "#DC2626",
                                         ),
@@ -500,14 +496,14 @@ def accounts_view(page: ft.Page):
 
                 from_date_text = ft.Text(
                     from_date_value["value"] or "From date",
-                    size=13,
+                    size=10,
                     expand=True,
                     color="#334155",
                 )
 
                 to_date_text = ft.Text(
                     to_date_value["value"] or "To date",
-                    size=13,
+                    size=10,
                     expand=True,
                     color="#334155",
                 )
@@ -518,6 +514,11 @@ def accounts_view(page: ft.Page):
                     keyboard_type=ft.KeyboardType.NUMBER,
                     expand=True,
                     border_radius=14,
+                    label_style=ft.TextStyle(
+                        size=10,
+                        color="#9CA3AF",
+                        weight=ft.FontWeight.W_400,
+                    ),
                 )
 
                 max_amount_tf = ft.TextField(
@@ -526,6 +527,11 @@ def accounts_view(page: ft.Page):
                     keyboard_type=ft.KeyboardType.NUMBER,
                     expand=True,
                     border_radius=14,
+                    label_style=ft.TextStyle(
+                        size=10,
+                        color="#9CA3AF",
+                        weight=ft.FontWeight.W_400,
+                    ),
                 )
 
                 category_text = ft.Text(
@@ -893,6 +899,33 @@ def accounts_view(page: ft.Page):
             color = ACCOUNT_TYPE_COLORS.get(account_type_text, "#475569")
             icon = ACCOUNT_TYPE_ICONS.get(account_type_text, ft.Icons.WALLET_OUTLINED)
 
+            header_row = ft.Row(
+                [
+                    ft.Text(
+                        "Transaction History",
+                        size=16,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Container(expand=True),
+                    ft.OutlinedButton(
+                        content=ft.Row(
+                            [
+                                ft.Icon(ft.Icons.FILTER_LIST, size=14),
+                                ft.Text("Filter", size=12),
+                            ],
+                            spacing=4,
+                            tight=True,
+                        ),
+                        on_click=lambda e: open_statement_filter_dialog(),
+                        height=32,
+                        style=ft.ButtonStyle(
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                            shape=ft.RoundedRectangleBorder(radius=8),
+                        ),
+                    ),
+                ],
+            )
+
             header = ft.Container(
                 padding=16,
                 border_radius=20,
@@ -930,12 +963,6 @@ def accounts_view(page: ft.Page):
                                     spacing=1,
                                     expand=True,
                                 ),
-                                ft.IconButton(
-                                    icon=ft.Icons.FILTER_ALT_OUTLINED,
-                                    icon_color="#FFFFFF",
-                                    tooltip="Filter",
-                                    on_click=lambda e: open_statement_filter_dialog(),
-                                ),
                             ],
                             spacing=10,
                         ),
@@ -963,23 +990,19 @@ def accounts_view(page: ft.Page):
                 modal=True,
                 title=None,
                 content=ft.Container(
-                    width=500,
-                    height=600,
+                    width=min(page.width * 0.95, 900),
+                    height=min(page.height * 0.85, 700),
                     padding=4,
                     content=ft.Column(
                         [
                             header,
-                            ft.Text(
-                                "Transaction History",
-                                size=14,
-                                weight=ft.FontWeight.W_700,
-                                color="#0F172A",
-                            ),
+                            header_row,
                             tx_list,
                         ],
                         spacing=12,
                     ),
                 ),
+                inset_padding=20,
                 actions=[
                     ft.TextButton(
                         "Close",
@@ -1277,7 +1300,6 @@ def accounts_view(page: ft.Page):
                     confirm_delete_dialog.open = False
                     safe_update()
 
-
                 confirm_delete_dialog.content = ft.Container(
                     width=300,
                     padding=16,
@@ -1324,10 +1346,7 @@ def accounts_view(page: ft.Page):
                 )
 
                 confirm_delete_dialog.actions = [
-                    ft.TextButton(
-                        "Cancel",
-                        on_click=cancel_delete,
-                    ),
+                    ft.TextButton("Cancel", on_click=cancel_delete),
                     ft.ElevatedButton(
                         "Delete",
                         icon=ft.Icons.DELETE_OUTLINE,
@@ -1344,7 +1363,12 @@ def accounts_view(page: ft.Page):
                 padding=ft.padding.symmetric(horizontal=9, vertical=4),
                 border_radius=20,
                 bgcolor="#DCFCE7",
-                content=ft.Text("Default", size=10, color="#15803D", weight=ft.FontWeight.W_600),
+                content=ft.Text(
+                    "Default",
+                    size=10,
+                    color="#15803D",
+                    weight=ft.FontWeight.W_600,
+                ),
                 visible=default_value,
             )
 
@@ -1360,78 +1384,97 @@ def accounts_view(page: ft.Page):
                         color=ft.Colors.with_opacity(0.055, ft.Colors.BLACK),
                         offset=ft.Offset(0, 6),
                     ),
-                    content=ft.Row(
+                    content=ft.Column(
                         [
-                            ft.Container(
-                                width=44,
-                                height=44,
-                                border_radius=18,
-                                bgcolor=ft.Colors.with_opacity(0.12, color),
-                                alignment=ft.Alignment.CENTER,
-                                content=ft.Icon(icon, color=color, size=27),
-                            ),
-                            ft.Column(
+                            ft.Row(
                                 [
-                                    ft.Row(
+                                    ft.Container(
+                                        width=44,
+                                        height=44,
+                                        border_radius=18,
+                                        bgcolor=ft.Colors.with_opacity(0.12, color),
+                                        alignment=ft.Alignment.CENTER,
+                                        content=ft.Icon(icon, color=color, size=27),
+                                    ),
+                                    ft.Column(
                                         [
-                                            ft.Text(
-                                                name,
-                                                size=16,
-                                                weight=ft.FontWeight.W_700,
-                                                color="#0F172A",
-                                                overflow=ft.TextOverflow.ELLIPSIS,
+                                            ft.Row(
+                                                [
+                                                    ft.Text(
+                                                        name,
+                                                        size=16,
+                                                        weight=ft.FontWeight.W_700,
+                                                        color="#0F172A",
+                                                        overflow=ft.TextOverflow.ELLIPSIS,
+                                                    ),
+                                                    default_badge,
+                                                ],
+                                                spacing=8,
                                             ),
-                                            default_badge,
+                                            ft.Text(
+                                                label,
+                                                size=12,
+                                                color="#64748B",
+                                            ),
                                         ],
-                                        spacing=8,
+                                        spacing=2,
+                                        expand=True,
                                     ),
-                                    ft.Text(
-                                        label,
-                                        size=12,
-                                        color="#64748B",
-                                    ),
+                                ],
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            ft.Row(
+                                [
                                     ft.Text(
                                         money(balance),
                                         size=18,
                                         weight=ft.FontWeight.W_700,
                                         color=color,
                                     ),
+                                    ft.Container(expand=True),
+                                    ft.Container(
+                                        border_radius=12,
+                                        bgcolor="#F8FAFC",
+                                        padding=ft.padding.symmetric(horizontal=2, vertical=0),
+                                        content=ft.Row(
+                                            [
+                                                ft.IconButton(
+                                                    icon=ft.Icons.LIST_ALT,
+                                                    icon_size=16,
+                                                    icon_color="#334155",
+                                                    tooltip="Account Transactions",
+                                                    width=30,
+                                                    height=30,
+                                                    on_click=lambda e, account=acc, bal=balance: open_account_transactions(account, bal),
+                                                ),
+                                                ft.IconButton(
+                                                    icon=ft.Icons.EDIT_OUTLINED,
+                                                    icon_size=16,
+                                                    icon_color="#2563EB",
+                                                    tooltip="Edit",
+                                                    width=30,
+                                                    height=30,
+                                                    on_click=edit_handler,
+                                                ),
+                                                ft.IconButton(
+                                                    icon=ft.Icons.DELETE_OUTLINE,
+                                                    icon_size=16,
+                                                    icon_color="#DC2626",
+                                                    tooltip="Delete",
+                                                    width=30,
+                                                    height=30,
+                                                    on_click=delete_handler,
+                                                ),
+                                            ],
+                                            spacing=0,
+                                            tight=True,
+                                        ),
+                                    ),
                                 ],
-                                spacing=2,
-                                expand=True,
-                            ),
-                            ft.Container(
-                                border_radius=14,
-                                bgcolor="#F8FAFC",
-                                content=ft.Row(
-                                    [
-                                        ft.IconButton(
-                                            icon=ft.Icons.LIST_ALT,
-                                            icon_size=18,
-                                            icon_color="#334155",
-                                            tooltip="Account Transactions",
-                                            on_click=lambda e, account=acc, bal=balance: open_account_transactions(account, bal),
-                                        ),
-                                        ft.IconButton(
-                                            icon=ft.Icons.EDIT_OUTLINED,
-                                            icon_size=18,
-                                            icon_color="#2563EB",
-                                            tooltip="Edit",
-                                            on_click=edit_handler,
-                                        ),
-                                        ft.IconButton(
-                                            icon=ft.Icons.DELETE_OUTLINE,
-                                            icon_size=18,
-                                            icon_color="#DC2626",
-                                            tooltip="Delete",
-                                            on_click=delete_handler,
-                                        ),
-                                    ],
-                                    spacing=0,
-                                ),
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
                         ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=8,
                     ),
                 )
             )
@@ -1569,14 +1612,20 @@ def accounts_view(page: ft.Page):
             ft.AppBar(
                 bgcolor="#F8FAFC",
                 elevation=0,
+                toolbar_height=44,  # 👈 ارتفاع کمتر
+                title_spacing=0,
                 title=ft.Text(
                     "Accounts",
+                    size=16,  # 👈 متن کوچکتر
                     color="#0F172A",
                     weight=ft.FontWeight.W_700,
                 ),
                 leading=ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
                     icon_color="#0F172A",
+                    icon_size=18,  # 👈 آیکون کوچکتر
+                    width=36,
+                    height=36,
                     on_click=lambda e: page.app_go("sabtehazine"),
                 ),
             ),
