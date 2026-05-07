@@ -58,6 +58,7 @@ from ui.income_view import income_view
 from ui.budget_view import budget_view
 from ui.dashboard_view import dashboard_view
 from ui.trend_view import trend_view
+from ui.cost_report_view import cost_report_view
 
 
 
@@ -200,6 +201,11 @@ def main(page: ft.Page):
             view.route = "/"
             page.views.append(apply_bg(view))
 
+        elif view_name == "cost_report_view":
+            view = cost_report_view(page)
+            view.route = "/"
+            page.views.append(apply_bg(view))
+        
         elif view_name == "budget_view":
             view = budget_view(page)
             view.route = "/"

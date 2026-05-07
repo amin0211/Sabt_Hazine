@@ -173,6 +173,14 @@ def build_chat_ui(
                     on_click=lambda e: page.app_go("budget_view"),
                 ),
                 ft.PopupMenuItem(
+                    icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "cost_report_view")),
+                    ),
+                    on_click=lambda e: page.app_go("cost_report_view"),
+                ),
+                ft.PopupMenuItem(
                     icon=ft.Icons.ANALYTICS_OUTLINED,
                     content=ft.Container(
                         width=150,

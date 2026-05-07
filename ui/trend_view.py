@@ -56,13 +56,13 @@ def _mini_card(title, value, icon):
                 ft.Row(
                     [
                         ft.Icon(icon, size=16, color="#2563EB"),
-                        ft.Text(title, size=11, color="#6B7280"),
+                        ft.Text(title, size=9, color="#6B7280"),
                     ],
                     spacing=5,
                 ),
                 ft.Text(
                     value,
-                    size=16,
+                    size=12,
                     weight=ft.FontWeight.BOLD,
                     color="#111827",
                     max_lines=1,
@@ -670,7 +670,7 @@ def trend_view(page: ft.Page):
                     ft.Icon(icon, size=16, color=PRIMARY),
                     ft.Text(
                         label,
-                        size=13,
+                        size=10,
                         color=TEXT_MAIN,
                         weight=ft.FontWeight.W_500,
                         overflow=ft.TextOverflow.ELLIPSIS,
@@ -1004,9 +1004,9 @@ def trend_view(page: ft.Page):
     def build_tabs_row():
         return ft.Row(
             [
-                build_tab_button("Spending", "spending"),
-                build_tab_button("Budget", "budget"),
-                build_tab_button("Insights", "insights"),
+                # build_tab_button("Spending", "spending"),
+                # build_tab_button("Budget", "budget"),
+                # build_tab_button("Insights", "insights"),
             ],
             spacing=8,
             wrap=True,

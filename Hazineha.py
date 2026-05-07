@@ -169,6 +169,9 @@ def hazinaha_view(page: ft.Page):
 
         if page.data.get("from") == "trend_view":
             return "trend_view"
+        
+        if page.data.get("from") == "cost_report_view":
+            return "cost_report_view"
 
         if page.data.get("from") == "edit_cost_dialog":
             return "edit_cost_dialog"   # 👈 مهم
@@ -208,6 +211,14 @@ def hazinaha_view(page: ft.Page):
             page.app_go("trend_view")
             return
         
+        if from_view == "cost_report_view":
+            page.data["category_picker_mode"] = False
+            page.data["cost_report_changed"] = True
+            page.data.pop("cost_report_view_cache", None)
+
+            page.app_go("cost_report_view")
+            return
+
         if from_view == "dashboard_view":
             page.data["category_picker_mode"] = False
 

@@ -1,0 +1,122 @@
+1. AI واقعی‌تر (نه فقط پارسر)
+
+الان AI داری، ولی می‌تونی یک لایه بالاتر ببری:
+
+پیشنهاد خودکار کاهش هزینه
+«این ماه ۳۰٪ بیشتر برای غذا خرج کردی، می‌خوای محدودش کنیم؟»
+تشخیص رفتار غیرعادی (Anomaly Detection)
+«این خرید با الگوی قبلیت نمی‌خونه»
+Smart Auto-Tagging بهتر
+از history کاربر یاد بگیره (category_learning که ساختی 👌 → قوی‌ترش کن)
+
+👉 اینجا مزیت رقابتی واقعی ساخته میشه
+
+2. Auto Mode (ثبت خودکار بدون دخالت)
+
+خیلی مهم برای retention:
+
+اگر کاربر چند بار مشابه نوشت:
+«بنزین 50» → خودش category + account + member رو auto بزنه
+یا:
+پیشنهاد سریع با یک کلیک (Quick Chips UI مثل ChatGPT)
+3. Goals & Gamification (خیلی مهم برای جذب)
+
+کاربر باید حس پیشرفت بگیره:
+
+هدف مالی:
+«تا آخر ماه فقط 500 دلار خرج کنم»
+Progress Bar
+Badge:
+🔥 7 days tracking
+💰 under budget
+
+👉 این باعث میشه کاربر برگرده
+
+4. Subscription / Bills Reminder
+
+خیلی کاربردی:
+
+تشخیص خودکار:
+«Netflix», «Gym» → recurring
+یادآوری:
+«فردا باید 14$ پرداخت کنی»
+حتی:
+پیش‌بینی total monthly fixed cost
+5. Shared / Family Mode
+
+چیزی که خیلی اپ‌ها ندارن:
+
+چند کاربر روی یک حساب
+هرکس هزینه خودش رو ثبت کنه
+گزارش:
+«کی بیشتر خرج کرده؟»
+
+👉 برای بازار واقعی خیلی مهمه
+
+6. Voice UX حرفه‌ای‌تر
+
+تو اینجا already جلو هستی 👇 ولی میشه بهترش کرد:
+
+حالت نگه‌دار (hold to talk مثل Telegram)
+Real-time transcript
+اصلاح خودکار:
+«منظورت 68.45 بود؟»
+7. Insightهای قابل اشتراک (Viral Feature)
+
+خیلی مهم برای رشد:
+
+کارت قابل share:
+«این ماه 1200$ خرج کردم 😬»
+یا:
+«من زیر بودجه موندم 🎉»
+
+👉 این باعث میشه اپت organically رشد کنه
+
+8. Search قوی (خیلی underrated)
+
+کاربر باید بتونه بگه:
+
+«هزینه‌های غذا هفته پیش»
+«چقدر برای پریسا خرج کردم؟»
+
+👉 basically ChatGPT-like query
+
+9. Offline Mode + Sync
+
+برای تجربه واقعی:
+
+بدون اینترنت ثبت کنه
+بعد sync با Supabase
+10. Onboarding حرفه‌ای (خیلی مهم برای conversion)
+
+اولین تجربه = تعیین‌کننده
+
+3 سوال ساده:
+درآمد ماهانه؟
+چند حساب داری؟
+هدف مالی؟
+
+بعد:
+👉 auto setup کامل
+
+11. Dashboard پیشرفته‌تر (الان خوبه، ولی...)
+
+اضافه کن:
+
+Burn Rate (سرعت خرج)
+پیش‌بینی:
+«با این روند، 5 روز زودتر پولت تموم میشه»
+Top 3 category
+12. Dark UX + Micro Animations
+
+کوچیکه ولی impact داره:
+
+انیمیشن وقتی هزینه ثبت میشه
+vibration کوچک
+رنگ‌بندی بر اساس category
+مهم‌ترین‌ها (اگر بخوام prioritize کنم):
+AI Insights + پیشنهاد
+Auto Mode (هوشمند)
+Shared / Family Mode
+Subscription tracking
+Viral share cards
