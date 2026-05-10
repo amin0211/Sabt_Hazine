@@ -197,7 +197,7 @@ def open_edit_cost_dialog(
 
             new_member = add_member(member_name.value, member_relation.value)
 
-            all_members = get_members()
+            all_members = get_members(page)
             member_dropdown.options = [
                 ft.dropdown.Option(str(m["id"]), m["full_name"])
                 for m in all_members

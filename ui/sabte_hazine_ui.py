@@ -15,8 +15,12 @@ from services.supabase_service import (
     add_member,
     get_financial_summary,
     get_income_transactions_by_month,
-    get_my_profile,
     get_current_user,
+    get_my_profile,
+    get_my_workspaces,
+    update_my_profile,
+    set_current_workspace,
+    get_opening_balance_total,
 )
 from services.openai_service import get_embedding
 from services.parser_service import normalize_text
@@ -67,6 +71,36 @@ def build_chat_ui(
         scroll=ft.ScrollMode.ALWAYS,
     )
 
+    def ensure_current_workspace():
+        page.data = page.data or {}
+
+        ws_id = page.data.get("current_workspace_id")
+        ws_title = page.data.get("current_workspace_title")
+
+        if ws_id and ws_title:
+            return ws_id
+
+        profile = get_my_profile()
+        if not profile:
+            return None
+
+        ws_id = profile.get("current_workspace_id")
+        if not ws_id:
+            return None
+
+        workspaces = get_my_workspaces()
+        current_ws = next((w for w in workspaces if w.get("id") == ws_id), None)
+
+        if not current_ws:
+            return None
+
+        page.data["current_workspace_id"] = current_ws["id"]
+        page.data["current_workspace_title"] = current_ws.get("title") or "Workspace"
+
+        return current_ws["id"]
+
+    ensure_current_workspace()
+
     async def check_user_session():
         stored_user_id = await page.shared_preferences.get("user_id")
 
@@ -74,12 +108,8 @@ def build_chat_ui(
         current_user_id = auth_user.id if auth_user else None
         # current_user_Email = auth_user.email
 
-        # print("eeeeeeee =", current_user_Email)
-        print("STORED USER ID =", stored_user_id)
-        print("AUTH USER ID =", current_user_id)
 
         if stored_user_id and current_user_id and stored_user_id != current_user_id:
-            print("❌ USER MISMATCH - clearing local state")
             await page.shared_preferences.clear()
             page.data = {}
             page.app_go("login")
@@ -140,6 +170,14 @@ def build_chat_ui(
             icon=ft.Icons.MORE_VERT,
             tooltip="منو",
             items=[
+                ft.PopupMenuItem(
+                    icon=ft.Icons.ACCOUNT_BALANCE,
+                    content=ft.Container(
+                        width=150,
+                        content=ft.Text(t(page, "workspaces_view")),
+                    ),
+                    on_click=lambda e: page.app_go("workspaces_view"),
+                ),
                 ft.PopupMenuItem(
                     icon=ft.Icons.ACCOUNT_BALANCE,
                     content=ft.Container(
@@ -529,9 +567,18 @@ def build_chat_ui(
         page.update()
 
     def load_filtered():
+        workspace_id = ensure_current_workspace()
+        if not workspace_id:
+            chat_column.controls.clear()
+            chat_column.controls.append(build_empty_state())
+            refresh_summary()
+            page.update()
+            return
+
         res = supabase_service.load_my_costs_by_date(
+            page, 
             start_date.isoformat(),
-            end_date.isoformat()
+            end_date.isoformat(),
         )
 
         chat_column.controls.clear()
@@ -543,9 +590,8 @@ def build_chat_ui(
                 chat_column.controls.append(create_message(row))
 
         refresh_summary()
-        page.update()   
-
-
+        page.update()
+        
     def update_start(e):
         nonlocal start_date
         start_date = start_picker.value.date()
@@ -587,6 +633,16 @@ def build_chat_ui(
         color="#6B7280",
     )
 
+    workspace_text = ft.Text(
+        page.data.get("current_workspace_title") or "Workspace",
+        size=10,
+        color="#2563EB",
+        weight=ft.FontWeight.W_600,
+        max_lines=1,
+        overflow=ft.TextOverflow.ELLIPSIS,
+    )
+
+
     summary_expense = ft.Text(
         "$0.00",
         size=10,
@@ -601,6 +657,222 @@ def build_chat_ui(
         color=PRIMARY,
     )
 
+    def open_workspace_picker(e):
+        workspaces = page.data.get("workspaces") or get_my_workspaces()
+
+        current_workspace_id = page.data.get("current_workspace_id")
+
+        dlg = ft.AlertDialog(modal=True)
+
+        def close():
+            dlg.open = False
+            page.update()
+
+        def select(ws):
+            page.data["current_workspace_id"] = ws["id"]
+            page.data["current_workspace_title"] = ws.get("title") or "Workspace"
+            page.data["workspaces"] = workspaces
+
+            try:
+                set_current_workspace(ws["id"])
+            except Exception as ex:
+                print("set current workspace error:", ex)
+
+            workspace_text.value = page.data["current_workspace_title"]
+
+            dlg.open = False
+            load_filtered()
+            refresh_summary()
+            page.update()
+
+        def workspace_row(ws):
+            is_selected = str(ws.get("id")) == str(current_workspace_id)
+
+            access_type = ws.get("access_type") or "owner"
+
+            if access_type == "owner":
+                subtitle = "فضای کاری شخصی شما"
+                icon = ft.Icons.HOME_ROUNDED
+                badge = "Owner"
+                badge_bg = "#DCFCE7"
+                badge_color = "#166534"
+            else:
+                shared_by = ws.get("shared_by_name") or ws.get("shared_by_email") or "نامشخص"
+                subtitle = f"اشتراکی از: {shared_by}"
+                icon = ft.Icons.GROUP_ROUNDED
+                badge = ws.get("role") or "Shared"
+                badge_bg = "#E0F2FE"
+                badge_color = "#0369A1"
+
+            return ft.Container(
+                ink=True,
+                on_click=lambda e, w=ws: select(w),
+                padding=ft.padding.symmetric(horizontal=10, vertical=9),
+                border_radius=16,
+                bgcolor="#EEF2FF" if is_selected else "#FFFFFF",
+                border=ft.border.all(
+                    1,
+                    "#818CF8" if is_selected else "#E5E7EB"
+                ),
+                content=ft.Row(
+                    [
+                        ft.Container(
+                            width=42,
+                            height=42,
+                            border_radius=14,
+                            bgcolor="#FFFFFF" if is_selected else "#F8FAFC",
+                            alignment=ft.Alignment.CENTER,
+                            content=ft.Icon(
+                                icon,
+                                size=21,
+                                color="#4F46E5" if is_selected else "#64748B",
+                            ),
+                        ),
+
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    ws.get("title") or "Workspace",
+                                    size=13,
+                                    weight=ft.FontWeight.W_700,
+                                    color="#0F172A",
+                                    max_lines=1,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                                ft.Text(
+                                    subtitle,
+                                    size=10,
+                                    color="#64748B",
+                                    max_lines=1,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+
+                        ft.Column(
+                            [
+                                ft.Container(
+                                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                                    border_radius=20,
+                                    bgcolor=badge_bg,
+                                    content=ft.Text(
+                                        badge,
+                                        size=9,
+                                        weight=ft.FontWeight.W_700,
+                                        color=badge_color,
+                                    ),
+                                ),
+                                ft.Icon(
+                                    ft.Icons.CHECK_CIRCLE_ROUNDED,
+                                    size=18,
+                                    color="#22C55E",
+                                    visible=is_selected,
+                                ),
+                            ],
+                            spacing=5,
+                            horizontal_alignment=ft.CrossAxisAlignment.END,
+                        ),
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+            )
+
+        dlg.title = ft.Row(
+            [
+                ft.Container(
+                    width=38,
+                    height=38,
+                    border_radius=13,
+                    bgcolor="#EEF2FF",
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Icon(
+                        ft.Icons.WORKSPACES_ROUNDED,
+                        color="#4F46E5",
+                        size=21,
+                    ),
+                ),
+                ft.Column(
+                    [
+                        ft.Text(
+                            "انتخاب Workspace",
+                            size=15,
+                            weight=ft.FontWeight.W_800,
+                            color="#0F172A",
+                        ),
+                        ft.Text(
+                            "فضای کاری ثبت هزینه‌ها را انتخاب کن",
+                            size=10,
+                            color="#64748B",
+                        ),
+                    ],
+                    spacing=1,
+                    expand=True,
+                ),
+            ],
+            spacing=10,
+        )
+
+        dlg.content = ft.Container(
+            width=360,
+            height=380,
+            content=ft.Column(
+                [
+                    ft.Container(
+                        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+                        border_radius=14,
+                        bgcolor="#F8FAFC",
+                        border=ft.border.all(1, "#E2E8F0"),
+                        content=ft.Row(
+                            [
+                                ft.Icon(
+                                    ft.Icons.INFO_OUTLINE_ROUNDED,
+                                    size=15,
+                                    color="#64748B",
+                                ),
+                                ft.Text(
+                                    "هزینه‌ها، بودجه، درآمد و گزارش‌ها بر اساس Workspace انتخاب‌شده فیلتر می‌شوند.",
+                                    size=10,
+                                    color="#64748B",
+                                    expand=True,
+                                ),
+                            ],
+                            spacing=7,
+                        ),
+                    ),
+
+                    ft.ListView(
+                        controls=[workspace_row(ws) for ws in workspaces],
+                        spacing=8,
+                        expand=True,
+                    ),
+                ],
+                spacing=10,
+            ),
+        )
+
+        dlg.actions = [
+            ft.TextButton(
+                "Manage",
+                on_click=lambda e: page.app_go("workspaces_view"),
+            ),
+            ft.TextButton(
+                "Close",
+                on_click=lambda e: close(),
+            ),
+        ]
+
+        dlg.actions_alignment = ft.MainAxisAlignment.END
+
+        if dlg not in page.overlay:
+            page.overlay.append(dlg)
+
+        dlg.open = True
+        page.update()
+
+        
     def money(v):
         try:
             return f"${float(v):,.2f}"
@@ -648,9 +920,44 @@ def build_chat_ui(
                                     [
                                         ft.Text("Total Balance", size=12, color="#6B7280"),
                                         summary_month_text,
-                                        # ft.Text(current_user_Email, size=12, color="#6B7280"),
+                                        ft.GestureDetector(
+                                            on_tap=open_workspace_picker,
+                                            content=ft.Container(
+                                                width=170,
+                                                height=30,
+                                                padding=ft.padding.only(left=8, right=6),
+                                                border_radius=12,
+                                                bgcolor="#EEF2FF",
+                                                alignment=ft.Alignment.CENTER,
+                                                content=ft.Row(
+                                                    [
+                                                        ft.Icon(
+                                                            ft.Icons.WORKSPACES_ROUNDED,
+                                                            size=13,
+                                                            color="#2563EB",
+                                                        ),
+
+                                                        # 🔥 اینجا باید expand باشه
+                                                        ft.Container(
+                                                            expand=True,
+                                                            content=workspace_text,
+                                                        ),
+
+                                                        ft.Icon(
+                                                            ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED,
+                                                            size=15,
+                                                            color="#2563EB",
+                                                        ),
+                                                    ],
+                                                    spacing=6,
+                                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                                ),
+                                            ),
+                                        ),
+
+
                                     ],
-                                    spacing=6,
+                                    spacing=8,
                                 ),
                                 summary_balance,
                             ],
@@ -658,17 +965,20 @@ def build_chat_ui(
                             expand=True,
                         ),
                         ft.Container(
-                            width=42,
-                            height=42,
-                            border_radius=14,
+                            margin=ft.margin.only(top=32),  # پایین‌تر آوردن منو
+                            width=38,
+                            height=38,
+                            border_radius=13,
                             bgcolor="#EEF2FF",
                             alignment=ft.Alignment.CENTER,
                             content=ft.PopupMenuButton(
                                 icon=ft.Icons.MENU_ROUNDED,
+                                icon_size=20,
                                 tooltip="Menu",
                                 items=build_main_menu().items,
                             ),
                         ),
+
                     ],
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
@@ -691,18 +1001,35 @@ def build_chat_ui(
         ),
     )
 
-
     def refresh_summary():
         current_ym = today_local().strftime("%Y-%m")
         summary_month_text.value = f"( {current_ym} )"
 
+        workspace_id = ensure_current_workspace()
+        workspace_text.value = page.data.get("current_workspace_title") or "Workspace"
+
+        if not workspace_id:
+            summary_balance.value = "$0.00"
+            summary_income.value = "$0.00"
+            summary_expense.value = "$0.00"
+            summary_left.value = "$0.00"
+            safe_page_update(page)
+            return
+
         try:
+            today_ = today_local()
+            month_start = date(today_.year, today_.month, 1)
+
             data = get_financial_summary(
-                start_date.isoformat(),
-                end_date.isoformat()
+                month_start.isoformat(),
+                today_.isoformat(),
+                workspace_id=workspace_id,
             )
 
-            income_rows = get_income_transactions_by_month(current_ym)
+            income_rows = get_income_transactions_by_month(
+                current_ym,
+                workspace_id=workspace_id,
+            )
 
             total_income = sum(
                 float(row.get("amount") or 0)
@@ -712,11 +1039,14 @@ def build_chat_ui(
 
             expense = float(data.get("expense") or 0)
 
-            summary_balance.value = money(total_income - expense)
+            total_available = get_opening_balance_total()
+
+            summary_balance.value = money(total_income - expense + total_available)
             summary_income.value = money(total_income)
             summary_expense.value = money(expense)
             summary_left.value = money(total_income - expense)
-
+            
+            
         except Exception as ex:
             print("refresh_summary error:", ex)
 
@@ -995,13 +1325,23 @@ def build_chat_ui(
         return container
 
 
+
     async def load_messages_async():
         await asyncio.sleep(0.05)
 
+        workspace_id = ensure_current_workspace()
+
+        if not workspace_id:
+            chat_column.controls.clear()
+            chat_column.controls.append(build_empty_state())
+            safe_page_update(page)
+            return
+
         res = await asyncio.to_thread(
             supabase_service.load_my_costs_by_date,
+            page,
             start_date.isoformat(),
-            end_date.isoformat()
+            end_date.isoformat(),
         )
 
         chat_column.controls.clear()
@@ -1013,25 +1353,7 @@ def build_chat_ui(
                 chat_column.controls.append(create_message(row))
 
         safe_page_update(page)
-
-
-    # def load_messages():
-        res = supabase_service.load_my_costs_by_date(
-            start_date.isoformat(),
-            end_date.isoformat()
-        )
-
-        chat_column.controls.clear()
-
-        if not res:
-            chat_column.controls.append(build_empty_state())        
-        else:
-            for row in res:
-                chat_column.controls.append(create_message(row))
-
-        page.update()
-
-
+        
     def update_ui(cost_id, new_row):
         for i, item in enumerate(chat_column.controls):
             if item.data == cost_id:
@@ -1237,8 +1559,6 @@ def build_chat_ui(
         page.data["sabtehazine_loaded"] = True
             # load_messages()
 
-    print("REOPEN FLAG =", page.data.get("reopen_edit_cost_dialog"))
-    print("EDIT ROW =", page.data.get("edit_cost_row"))
 
     if isinstance(page.data, dict) and page.data.get("reopen_edit_cost_dialog"):
         page.data["reopen_edit_cost_dialog"] = False
@@ -1249,8 +1569,6 @@ def build_chat_ui(
             def reopen_on_save(updated_data):
                 old_category_id = edit_row.get("old_category_id")
                 new_category_id = updated_data.get("id_hazine")
-
-                print(f" 11111 = {old_category_id}  == {new_category_id}")
 
                 updated_row = controller.edit_cost(edit_row["id"], updated_data)
                 page.data["sabtehazine_changed"] = True
@@ -1295,6 +1613,7 @@ def build_chat_ui(
             )
 
     refresh_summary()
+
 
     return ft.View(
         route="/sabtehazine",

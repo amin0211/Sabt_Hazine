@@ -2,6 +2,7 @@ translations = {
     "fa": {
         "profile": "پروفایل",
         "members": "اعضا",
+        "workspaces_view": "فضای کاری",
         "dashboard": "داشبور",
         "Accounts": "حسابها",
         "Income": "ثبت درآمد",
@@ -56,6 +57,7 @@ translations = {
 
         "profile": "Profile",
         "members": "Members",
+        "workspaces_view": "workspaces_view",
         "dashboard": "dashboard",
         "Accounts": "Accounts",
         "Income": "Income",

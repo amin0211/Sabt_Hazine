@@ -102,9 +102,6 @@ def save_new(data_or_text):
     else:
         data = process_expense(data_or_text)
 
-    # print(f"aaaa = {text}")
-    # print(f"aaaa1 = {data_or_text.get("member_id")}")
-    # print(f"aaaa2 = {data_or_text.get("title")}")
     
     inserted = insert_cost_for_current_user(data)
     if not inserted:

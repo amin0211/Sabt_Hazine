@@ -63,7 +63,14 @@ from datetime import datetime, date
 from services.i18n import t
 import asyncio
 
-from services.supabase_service import load_all_hazineha, load_leaf_hazineha, get_current_user
+from services.supabase_service import (
+    load_all_hazineha, 
+    load_leaf_hazineha,
+    get_current_user,
+    _load_all_hazineha_for_workspace,
+    _load_active_hazineha_for_workspace, 
+    _load_leaf_hazineha_for_workspace,
+)
 
 from zoneinfo import ZoneInfo
 
@@ -122,7 +129,7 @@ def hazinaha_view(page: ft.Page):
             ],
         )
 
-    current_user_id = current_user.id
+    # current_user_id = current_user.id
 
     selected_member_id = {"value": None}
     selected_member_title = {"value": t(page, "Hazineha_AllMember")}
@@ -162,7 +169,6 @@ def hazinaha_view(page: ft.Page):
 
     def get_from_view():
 
-        print(f"111 = {page.data.get("from")}")
 
         if page.data.get("from") == "dashboard_view":
             return "dashboard_view"
@@ -185,7 +191,6 @@ def hazinaha_view(page: ft.Page):
     def go_back(e):
         from_view = page.data.get("from")
 
-        print(f"111 = {from_view}")
 
         if from_view == "edit_cost_dialog":
             page.data["reopen_edit_cost_dialog"] = True
@@ -311,11 +316,13 @@ def hazinaha_view(page: ft.Page):
 
 
     def load_cost_sums_filtered():
+        workspace_id = page.data.get("current_workspace_id")
         query = (
             supabase
             .table("cost")
             .select("id_hazine, price, date_cost, member_id")
-            .eq("user_id", current_user_id)
+            .eq("workspace_id", workspace_id)
+            # .eq("user_id", current_user_id)
             .gte("date_cost", start_date.isoformat())
             .lte("date_cost", end_date.isoformat())
         )
@@ -345,11 +352,14 @@ def hazinaha_view(page: ft.Page):
         rebuild_tree(update_page=update_page)
 
     def load_data_from_db():
+        workspace_id = page.data.get("current_workspace_id")
+
+
         response = (
             supabase
             .table("hazineha")
             .select("*")
-            .eq("user_id", current_user_id)
+            .eq("workspace_id", workspace_id)
             .order("id")
             .execute()
         )
@@ -386,36 +396,48 @@ def hazinaha_view(page: ft.Page):
         return root_nodes_local, nodes
 
     def update_title(node_id, new_title):
+
+
         (
             supabase
             .table("hazineha")
             .update({"title": new_title})
             .eq("id", node_id)
-            .eq("user_id", current_user_id)
+            # .eq("workspace_id", workspace_id)
             .execute()
         )
         page.data["hazineha_changed"] = True
 
     def insert_node(title, parent_id):
+        workspace_id = page.data.get("current_workspace_id")
+        user = get_current_user()
+
+        if not workspace_id:
+            raise Exception("current_workspace_id is empty")
+
+        if not user:
+            raise Exception("User is not logged in")
+
         res = (
             supabase
             .table("hazineha")
             .insert({
+                "user_id": user.id,
+                "workspace_id": workspace_id,
                 "title": title,
                 "id_parent": parent_id,
-                "user_id": current_user_id,
+                "keywords": [],
+                "embedding_text": "",
+                "is_active": True,
+                "template_id": None,
             })
             .execute()
         )
+
         page.data["hazineha_changed"] = True
 
-        if hasattr(load_all_hazineha, "cache_clear"):
-            load_all_hazineha.cache_clear()
-
-        if hasattr(load_leaf_hazineha, "cache_clear"):
-            load_leaf_hazineha.cache_clear()
-
         return res.data[0]["id"]
+
 
     data = load_data_from_db()
 
@@ -490,6 +512,12 @@ def hazinaha_view(page: ft.Page):
         dialog.open = False
         page.update()
 
+
+    def clear_hazineha_cache():
+        _load_all_hazineha_for_workspace.cache_clear()
+        _load_active_hazineha_for_workspace.cache_clear()
+        _load_leaf_hazineha_for_workspace.cache_clear()
+        
     def delete_node(parent, child, e=None):
         if without_edit:
             return
@@ -505,11 +533,10 @@ def hazinaha_view(page: ft.Page):
                     .table("hazineha")
                     .delete()
                     .eq("id", child.id)
-                    .eq("user_id", current_user_id)
+                    # .eq("user_id", current_user_id)
                     .execute()
                 )
 
-                print("DELETE RESULT:", res.data)
 
                 if child in parent.children:
                     parent.children.remove(child)
@@ -520,10 +547,10 @@ def hazinaha_view(page: ft.Page):
                 page.data["hazineha_changed"] = True
 
                 if hasattr(load_all_hazineha, "cache_clear"):
-                    load_all_hazineha.cache_clear()
+                    clear_hazineha_cache()
 
                 if hasattr(load_leaf_hazineha, "cache_clear"):
-                    load_leaf_hazineha.cache_clear()
+                    clear_hazineha_cache()
 
                 dialog.open = False
                 rebuild_tree()
@@ -551,7 +578,6 @@ def hazinaha_view(page: ft.Page):
         supabase.table("hazineha") \
             .delete() \
             .eq("id", child.id) \
-            .eq("user_id", current_user_id) \
             .execute()
 
         # 🔥 دوباره کل دیتا رو از دیتابیس بگیر
@@ -1085,11 +1111,13 @@ def hazinaha_view(page: ft.Page):
     )
 
     def load_members():
+        workspace_id = page.data.get("current_workspace_id")
         res = (
             supabase
             .table("members")
             .select("id, full_name, relation")
-            .eq("user_id", current_user_id)
+            .eq("workspace_id", workspace_id)
+            # .eq("user_id", current_user_id)
             .order("full_name")
             .execute()
         )

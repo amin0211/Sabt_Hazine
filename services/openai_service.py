@@ -30,18 +30,14 @@ def get_embedding(text: str):
         if not text:
             return None
 
-        now = now
-        print("ssssssss 311 = ")
-        print(now.strftime("%H:%M:%S.%f")[:-3])
 
         response = client.embeddings.create(
             model="text-embedding-3-small",
             input=text
         )
 
-        now = now
-        print("ssssssss 312 = ")
-        print(now.strftime("%H:%M:%S.%f")[:-3])
+        # print("ssssssss 312 = ")
+        # print(now.strftime("%H:%M:%S.%f")[:-3])
 
         return response.data[0].embedding
 

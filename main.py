@@ -59,7 +59,7 @@ from ui.budget_view import budget_view
 from ui.dashboard_view import dashboard_view
 from ui.trend_view import trend_view
 from ui.cost_report_view import cost_report_view
-
+from ui.workspace_view import workspaces_view
 
 
 
@@ -135,7 +135,6 @@ def main(page: ft.Page):
 
 
     async def render_view(view_name: str):
-        print("RENDER_VIEW:", view_name, flush=True)
 
         page.views.clear()
         page.data = page.data or {}
@@ -178,6 +177,11 @@ def main(page: ft.Page):
 
         elif view_name == "main":
             view = main_view(page, theme)
+            view.route = "/"
+            page.views.append(apply_bg(view))
+
+        elif view_name == "workspaces_view":
+            view = workspaces_view(page)
             view.route = "/"
             page.views.append(apply_bg(view))
 
@@ -260,12 +264,6 @@ def main(page: ft.Page):
                 )
             )
 
-        print("VIEWS COUNT:", len(page.views), flush=True)
-        print(
-            "CONTROLS COUNT:",
-            len(page.views[0].controls) if page.views else 0,
-            flush=True,
-        )
 
         page.update()
 
@@ -294,12 +292,10 @@ def main(page: ft.Page):
 
     async def go_start():
         try:
-            print("GO_START STARTED", flush=True)
 
             page.data = page.data or {}
 
             user = await restore_session_from_storage(page)
-            print("USER:", bool(user), flush=True)
 
             page.data["user"] = user
 
@@ -310,7 +306,6 @@ def main(page: ft.Page):
                 page.data["lang"] = "fa"
                 await render_view("login")
 
-            print("GO_START FINISHED", flush=True)
 
         except Exception as ex:
             print("GO_START ERROR:", ex, flush=True)

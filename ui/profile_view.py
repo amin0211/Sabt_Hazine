@@ -4,6 +4,7 @@ from services.supabase_service import (
     update_my_profile,
     get_languages,
     refresh_hazineha_titles_for_user,
+    update_user_password,
 )
 
 
@@ -19,6 +20,72 @@ def profile_view(page: ft.Page):
         width=320,
         options=[],
     )
+
+    new_password = ft.TextField(
+        label="New Password",
+        width=320,
+        password=True,
+        can_reveal_password=True,
+    )
+
+    confirm_password = ft.TextField(
+        label="Confirm Password",
+        width=320,
+        password=True,
+        can_reveal_password=True,
+    )
+
+    password_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Change Password"),
+        content=ft.Column(
+            [
+                new_password,
+                confirm_password,
+            ],
+            tight=True,
+            spacing=10,
+        ),
+        actions=[],
+    )
+
+    page.overlay.append(password_dialog)
+
+    def open_password_dialog(e=None):
+        new_password.value = ""
+        confirm_password.value = ""
+        password_dialog.open = True
+        page.update()
+
+    def close_password_dialog(e=None):
+        password_dialog.open = False
+        page.update()
+
+    def save_password(e=None):
+        try:
+            p1 = (new_password.value or "").strip()
+            p2 = (confirm_password.value or "").strip()
+
+            if len(p1) < 6:
+                show_message("Password must be at least 6 characters.")
+                return
+
+            if p1 != p2:
+                show_message("Passwords do not match.")
+                return
+
+            update_user_password(p1)
+
+            password_dialog.open = False
+            show_message("Password changed successfully.", ft.Colors.GREEN_400)
+
+        except Exception as ex:
+            show_message(f"Password error: {ex}")
+
+    password_dialog.actions = [
+        ft.TextButton("Cancel", on_click=close_password_dialog),
+        ft.ElevatedButton("Save Password", on_click=save_password),
+    ]
 
     status_text = ft.Text("", color=ft.Colors.RED_400)
 
@@ -94,7 +161,7 @@ def profile_view(page: ft.Page):
 
             profile = get_my_profile()
             if profile and profile.get("id"):
-                refresh_hazineha_titles_for_user(profile["id"], selected_language_id)
+                refresh_hazineha_titles_for_user(profile["workspace_id"], selected_language_id)
 
             langs = get_languages() or []
             apply_language_ui(selected_language_id, langs)
@@ -113,7 +180,18 @@ def profile_view(page: ft.Page):
         route="/profile",
         controls=[
             ft.Container(height=20),
-            ft.Text("Profile", size=28, weight=ft.FontWeight.BOLD),
+            ft.Row(
+                [
+                    ft.Text("Profile", size=28, weight=ft.FontWeight.BOLD),
+                    ft.IconButton(
+                        icon=ft.Icons.LOCK_RESET,
+                        tooltip="Change Password",
+                        on_click=open_password_dialog,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+
             ft.Container(height=10),
 
             email,

@@ -183,7 +183,7 @@ def cost_report_view(page: ft.Page):
 
     # ---------------- Member Picker ----------------
 
-    members_data = get_members()
+    members_data = get_members(page)
     member_search_query = {"value": ""}
 
     member_btn = ft.GestureDetector()
@@ -362,14 +362,12 @@ def cost_report_view(page: ft.Page):
     # ---------------- Data Filter ----------------
 
     def load_filtered_costs():
-        print("REPORT LOAD FILTERED COSTS")
-
         costs = load_my_costs_by_date(
+            page, 
             start_date.isoformat(),
             end_date.isoformat(),
         )
 
-        print("REPORT RAW COSTS:", len(costs or []))
 
         if selected_category.get("category_id"):
             categories = load_active_hazineha()
@@ -404,7 +402,6 @@ def cost_report_view(page: ft.Page):
             reverse=True,
         )
 
-        print("REPORT FILTERED COSTS:", len(costs))
         return costs
 
     # ---------------- Message Card Like Sabte Hazine ----------------

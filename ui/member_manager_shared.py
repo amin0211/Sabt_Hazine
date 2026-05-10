@@ -343,7 +343,7 @@ def build_member_manager_content(
         )
 
     def refresh_member_table(e=None):
-        members = get_members()
+        members = get_members(page)
         member_table.controls.clear()
 
         name_q = (name_filter.value or "").strip().lower()

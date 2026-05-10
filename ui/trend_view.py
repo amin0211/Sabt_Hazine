@@ -491,6 +491,7 @@ def _total_expense(costs):
 
 def _filter_costs(filters):
     costs = load_my_costs_by_date(
+        None, 
         filters["from_date"],
         filters["to_date"],
     )
@@ -804,7 +805,7 @@ def trend_view(page: ft.Page):
 
     # ---------------- Member Picker ----------------
 
-    members_data = get_members()
+    members_data = get_members(page)
     member_search_query = {"value": ""}
 
     member_list_column = ft.Column(

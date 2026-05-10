@@ -20,32 +20,378 @@ load_dotenv()
 
 SUPABASE_URL = "https://gisyttrgmhbuxvmsjdfm.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("SUPABASE_URL or SUPABASE_KEY is not set")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+# --------------WorkSpace ------------------
+def load_my_costs_by_date(page, start_date, end_date):
+    # user = get_current_user()
+    # if not user:
+    #     return []
+
+    workspace_id = get_current_workspace_id(page)
+
+    if not workspace_id:
+        profile = get_my_profile()
+        workspace_id = profile.get("current_workspace_id") if profile else None
+
+    q = (
+        supabase.table("cost")
+        .select("*")
+        .gte("date_cost", start_date)
+        .lte("date_cost", end_date)
+        .order("date_cost", desc=True)
+    )
+
+    if workspace_id:
+        q = q.eq("workspace_id", workspace_id)
+
+    res = q.execute()
+    return res.data or []
+
+
+def add_user_to_workspace(workspace_id, email, role="member"):
+    profile_res = (
+        supabase.table("profiles")
+        .select("id, email")
+        .eq("email", email)
+        .maybe_single()
+        .execute()
+    )
+
+    if not profile_res.data:
+        return {
+            "success": False,
+            "message": "User not found. They need to register first."
+        }
+
+    user_id = profile_res.data["id"]
+
+    supabase.table("workspace_members").upsert({
+        "workspace_id": workspace_id,
+        "user_id": user_id,
+        "role": role,
+        "is_active": True,
+    }, on_conflict="workspace_id,user_id").execute()
+
+    return {
+        "success": True,
+        "message": "User added successfully."
+    }
+
+def create_workspace(title, is_active=True, description=None):
+    user = get_current_user()
+    if not user:
+        return None
+
+    res = supabase.table("workspaces").insert({
+        "title": title,
+        "description": description,
+        "owner_user_id": user.id,
+        "is_active": is_active,
+    }).execute()
+
+    workspace = res.data[0]
+    workspace_id = workspace["id"]
+
+    # ✅ ساخت root category
+    try:
+        supabase.table("hazineha").insert({
+            "user_id": user.id,
+            "workspace_id": workspace_id,
+            "title": title,          # همون اسم workspace
+            "id_parent": None,       # root
+            "keywords": [],
+            "embedding_text": "",
+            "is_active": True,
+            "template_id": None,
+        }).execute()
+    except Exception as ex:
+        print("create root hazineha error:", ex)
+
+    create_default_account_for_user(user.id, workspace_id)
+
+    return workspace
+
+def get_my_workspaces():
+    user = get_current_user()
+    if not user:
+        return []
+
+    user_id = user.id
+
+    # 1) workspace هایی که خود کاربر owner است
+    owned_res = (
+        supabase.table("workspaces")
+        .select("id, title, owner_user_id, is_active")
+        .eq("owner_user_id", user_id)
+        .eq("is_active", True)
+        .execute()
+    )
+
+    owned = owned_res.data or []
+
+    for w in owned:
+        w["access_type"] = "owner"
+        w["shared_by_name"] = None
+        w["shared_by_email"] = None
+
+    # 2) workspace هایی که با کاربر share شده
+    shared_res = (
+        supabase.table("workspace_members")
+        .select("""
+            workspace_id,
+            role,
+            invited_by,
+            workspaces:workspace_id (
+                id,
+                title,
+                owner_user_id,
+                is_active
+            ),
+            inviter:invited_by (
+                id,
+                email,
+                name,
+                family
+            )
+        """)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .execute()
+    )
+
+    shared_rows = shared_res.data or []
+    shared = []
+
+    for row in shared_rows:
+        workspace = row.get("workspaces")
+        inviter = row.get("inviter") or {}
+
+        if not workspace:
+            continue
+
+        if workspace.get("is_active") is not True:
+            continue
+
+        inviter_name = (
+            f"{inviter.get('name') or ''} {inviter.get('family') or ''}".strip()
+            # or inviter.get("username")
+            or inviter.get("email")
+            or "Unknown"
+        )
+
+        shared.append({
+            "id": workspace.get("id"),
+            "title": workspace.get("title"),
+            "owner_user_id": workspace.get("owner_user_id"),
+            "access_type": "shared",
+            "role": row.get("role"),
+            "shared_by_name": inviter_name,
+            "shared_by_email": inviter.get("email"),
+        })
+
+    return owned + shared
+
+
+def update_workspace(workspace_id, title, is_active=True):
+    res = (
+        supabase.table("workspaces")
+        .update({
+            "title": title,
+            "is_active": is_active,
+        })
+        .eq("id", workspace_id)
+        .execute()
+    )
+
+    return res.data
+
+
+def delete_workspace(workspace_id):
+    res = (
+        supabase.table("workspaces")
+        .update({"is_active": False})
+        .eq("id", workspace_id)
+        .execute()
+    )
+
+    return res.data
+
+
+def get_workspace_shared_users(workspace_id):
+    user = get_current_user()
+    if not user:
+        return []
+
+    # workspace_id = get_current_workspace_id()
+
+    try:
+        members_res = (
+            supabase.table("workspace_members")
+            .select("user_id, role")
+            .eq("workspace_id", workspace_id)
+            .eq("is_active", True)
+            .neq("user_id", user.id)
+            .execute()
+        )
+    except Exception as ex:
+        print("GET WORKSPACE MEMBERS ERROR:", ex)
+        return []
+
+    members = members_res.data if members_res and members_res.data else []
+
+    rows = []
+
+    for item in members:
+        member_user_id = item.get("user_id")
+
+        try:
+            profile_res = (
+                supabase.table("profiles")
+                .select("id, email, name, family")
+                .eq("id", member_user_id)
+                .limit(1)
+                .execute()
+            )
+
+            profiles = profile_res.data if profile_res and profile_res.data else []
+            profile = profiles[0] if profiles else {}
+
+        except Exception as ex:
+            print("GET SHARED USER PROFILE ERROR:", ex)
+            profile = {}
+
+        display_name = " ".join(
+            [
+                profile.get("name") or "",
+                profile.get("family") or "",
+            ]
+        ).strip()
+
+        rows.append(
+            {
+                "user_id": member_user_id,
+                "email": profile.get("email") or "",
+                # "username": profile.get("username") or "",
+                "display_name": display_name,
+                "role": item.get("role"),
+            }
+        )
+
+    return rows
+
+
+def remove_workspace_share(workspace_id, user_id):
+    res = (
+        supabase.table("workspace_members")
+        .update({"is_active": False})
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    return res.data
+
+def share_workspace_by_email(workspace_id, email):
+    email = (email or "").strip().lower()
+
+    if not email:
+        return {
+            "success": False,
+            "message": "Email is required.",
+        }
+
+    current_user = get_current_user()
+    if not current_user:
+        return {
+            "success": False,
+            "message": "User is not logged in.",
+        }
+
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("id, email")
+            .eq("email", email)
+            .limit(1)
+            .execute()
+        )
+            
+    except Exception as ex:
+        print("SHARE PROFILE SEARCH ERROR:", ex)
+        return {
+            "success": False,
+            "message": "Could not search user profile.",
+        }
+
+    profiles = profile_res.data if profile_res and profile_res.data else []
+
+    if not profiles:
+        return {
+            "success": False,
+            "message": "User not found. They need to register first.",
+        }
+
+    user_id = profiles[0]["id"]
+
+    if user_id == current_user.id:
+        return {
+            "success": False,
+            "message": "You cannot share a workspace with yourself.",
+        }
+
+    try:
+        supabase.table("workspace_members").upsert(
+            {
+                "workspace_id": workspace_id,
+                "user_id": user_id,
+                "role": "member",
+                "is_active": True,
+                "invited_by": current_user.id,
+            },
+            on_conflict="workspace_id,user_id",
+        ).execute()
+
+    except Exception as ex:
+        print("SHARE WORKSPACE ERROR:", ex)
+        return {
+            "success": False,
+            "message": "Could not share workspace.",
+        }
+
+    return {
+        "success": True,
+        "message": "Workspace shared successfully.",
+    }
+
+
+def set_current_workspace(workspace_id):
+    user = get_current_user()
+    if not user:
+        return False
+
+    res = (
+        supabase.table("profiles")
+        .update({"current_workspace_id": workspace_id})
+        .eq("id", user.id)
+        .execute()
+    )
+
+    return bool(res.data)
+
+# -------------- workspace ----------------
+
 
 def get_languages():
     res = supabase.table("languages").select("*").order("id").execute()
     return res.data or []
 
-
-def get_my_profile():
-    user = supabase.auth.get_user()
-    if not user or not user.user:
-        return None
-
-    user_id = user.user.id
-
-    res = (
-        supabase.table("profiles")
-        .select("id, email, name, family, birthdate, language_id")
-        .eq("id", user_id)
-        .single()
-        .execute()
-    )
-    return res.data if res.data else None
 
 def get_my_profile_with_language():
     user = supabase.auth.get_user()
@@ -65,20 +411,18 @@ def get_my_profile_with_language():
     return res.data if res.data else None
 
 def update_my_profile(data: dict):
-    user = supabase.auth.get_user()
-    if not user or not user.user:
+    user = get_current_user()
+    if not user:
         return None
-
-    user_id = user.user.id
 
     res = (
         supabase.table("profiles")
         .update(data)
-        .eq("id", user_id)
+        .eq("id", user.id)
         .execute()
     )
-    return res.data
 
+    return res.data[0] if res.data else None
 
 def get_my_profile():
     user = supabase.auth.get_user()
@@ -100,22 +444,47 @@ def update_my_profile(data: dict):
     res = supabase.table("profiles").update(data).eq("id", user_id).execute()
     return res.data
 
+def update_user_password(new_password: str):
+    if not new_password or len(new_password) < 6:
+        raise Exception("Password must be at least 6 characters.")
+
+    res = supabase.auth.update_user({
+        "password": new_password
+    })
+
+    return res
+
+def get_opening_balance_total():
+    workspace_id = get_current_workspace_id()
+
+    rows = (
+        supabase.table("accounts")
+        .select("initial_balance")
+        .eq("workspace_id", workspace_id)
+        .eq("is_active", True)
+        .execute()
+        .data
+    ) or []
+
+    return sum(float(r.get("initial_balance") or 0) for r in rows)
+
 def get_account_balances():
     user = get_current_user()
     res = supabase.rpc("get_account_balances", {"p_user_id": user.id}).execute()
     return res.data or []
 
 def get_account_transactions(account_id):
-    user = get_current_user()
-    if not user:
-        return []
+    workspace_id = get_current_workspace_id()
+    # user = get_current_user()
+    # if not user:
+    #     return []
 
     rows = []
 
     categories = (
         supabase.table("hazineha")
         .select("id,title")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .execute()
         .data
     ) or []
@@ -123,7 +492,7 @@ def get_account_transactions(account_id):
     members = (
         supabase.table("members")
         .select("id,full_name")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .execute()
         .data
     ) or []
@@ -134,7 +503,7 @@ def get_account_transactions(account_id):
     costs = (
         supabase.table("cost")
         .select("id,title,price,date_cost,id_hazine,member_id")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("account_id", account_id)
         .execute()
         .data
@@ -155,7 +524,7 @@ def get_account_transactions(account_id):
     incomes = (
         supabase.table("income_transactions")
         .select("id,title,amount,transaction_date,status")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("account_id", account_id)
         .eq("is_active", True)
         .execute()
@@ -177,7 +546,7 @@ def get_account_transactions(account_id):
     transfers_out = (
         supabase.table("transfer_transactions")
         .select("id,amount,transfer_date,note")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("from_account_id", account_id)
         .execute()
         .data
@@ -198,7 +567,7 @@ def get_account_transactions(account_id):
     transfers_in = (
         supabase.table("transfer_transactions")
         .select("id,amount,transfer_date,note")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("to_account_id", account_id)
         .execute()
         .data
@@ -224,9 +593,11 @@ def create_transfer(from_account_id, to_account_id, amount, transfer_date, note=
     user = get_current_user()
     if not user:
         raise Exception("User not logged in")
+    workspace_id = get_current_workspace_id()
 
     data = {
         "user_id": user.id,
+        "workspace_id": workspace_id,
         "from_account_id": from_account_id,
         "to_account_id": to_account_id,
         "amount": amount,
@@ -239,10 +610,10 @@ def create_transfer(from_account_id, to_account_id, amount, transfer_date, note=
 
 # ================= FAMILY MEMBERS =================
 def find_member_by_name(member_name: str):
-    print("sssss")
-    user = get_current_user()
-    if not user:
-        return None
+    workspace_id = get_current_workspace_id()
+    # user = get_current_user()
+    # if not user:
+    #     return None
 
     if not member_name or not member_name.strip():
         return None
@@ -253,7 +624,7 @@ def find_member_by_name(member_name: str):
     exact = (
         supabase.table("members")
         .select("id, full_name, relation")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("full_name", name)
         .limit(1)
         .execute()
@@ -266,7 +637,7 @@ def find_member_by_name(member_name: str):
     fuzzy = (
         supabase.table("members")
         .select("id, full_name, relation")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .ilike("full_name", f"%{name}%")
         .limit(1)
         .execute()
@@ -274,15 +645,17 @@ def find_member_by_name(member_name: str):
 
     return fuzzy.data[0] if fuzzy.data else None
 
-def get_members():
-    user = get_current_user()
-    if not user:
-        return []
+def get_members(page=None):
+
+    workspace_id = get_current_workspace_id(page)
+    # user = get_current_user()
+    # if not user:
+    #     return []
 
     res = (
         supabase.table("members")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .order("id")
         .execute()
     )
@@ -290,25 +663,27 @@ def get_members():
 
 
 def add_member(full_name, relation=None):
+
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
 
+    workspace_id = get_current_workspace_id()
     payload = {
         "user_id": user.id,
+        "workspace_id": workspace_id,
         "full_name": full_name.strip(),
         "relation": relation.strip() if relation else None,
     }
 
-    print("333")
     res = supabase.table("members").insert(payload).execute()
-    print("444")
     return res.data[0] if res.data else None
 
 def update_member(member_id, full_name, relation=None):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    workspace_id = get_current_workspace_id()
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User is not logged in")
 
     payload = {
         "full_name": full_name.strip(),
@@ -319,21 +694,22 @@ def update_member(member_id, full_name, relation=None):
         supabase.table("members")
         .update(payload)
         .eq("id", member_id)
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .execute()
     )
 
     return res.data[0] if res.data else None
 
 def delete_member(member_id):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    workspace_id = get_current_workspace_id()    
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User is not logged in")
 
     supabase.table("members") \
         .delete() \
         .eq("id", member_id) \
-        .eq("user_id", user.id) \
+        .eq("workspace_id", workspace_id) \
         .execute()
     
 # ================= LOG =================
@@ -402,10 +778,9 @@ def _vector_to_sql(vector):
 
 
 def clear_hazineha_cache():
-    _load_all_hazineha_for_user.cache_clear()
-    _load_active_hazineha_for_user.cache_clear()
-    _load_leaf_hazineha_for_user.cache_clear()
-
+    _load_all_hazineha_for_workspace.cache_clear()
+    _load_active_hazineha_for_workspace.cache_clear()
+    load_leaf_hazineha.cache_clear()
 
 # ================= AUTH =================
 def sign_up_user(email: str, password: str):
@@ -438,6 +813,25 @@ def get_current_user():
     except Exception as e:
         print(f"get_current_user error: {e}")
         return None
+
+def get_current_workspace_id(page=None):
+    # 1️⃣ اول از page.data بخون (سریع‌ترین)
+    if page and isinstance(page.data, dict):
+        ws_id = page.data.get("current_workspace_id")
+        if ws_id and str(ws_id) != "None":
+            return ws_id
+
+    # 2️⃣ fallback به DB (profile)
+    profile = get_my_profile()
+    if not profile:
+        return None
+
+    ws_id = profile.get("current_workspace_id")
+
+    if not ws_id or str(ws_id) == "None":
+        return None
+
+    return ws_id
 
 
 def set_session(access_token: str, refresh_token: str):
@@ -487,16 +881,13 @@ def update_profile(user_id: str, data: dict):
         print(f"update_profile error: {e}")
         return None
 
-def refresh_hazineha_titles_for_user(user_id: str, language_id: int):
+def refresh_hazineha_titles_for_user(workspace_id: str, language_id: int):
     try:
-        if not user_id:
-            raise Exception("user_id is required")
-
         # همه دسته‌بندی‌های کاربر که از template آمده‌اند
         hazine_rows = (
             supabase.table("hazineha")
             .select("id,template_id")
-            .eq("user_id", user_id)
+            .eq("workspace_id", workspace_id)
             .execute()
             .data
         ) or []
@@ -543,7 +934,7 @@ def refresh_hazineha_titles_for_user(user_id: str, language_id: int):
                 supabase.table("hazineha")
                 .update({"title": new_title})
                 .eq("id", row["id"])
-                .eq("user_id", user_id)
+                # .eq("user_id", user_id)
                 .execute()
             )
 
@@ -554,9 +945,20 @@ def refresh_hazineha_titles_for_user(user_id: str, language_id: int):
         print(f"refresh_hazineha_titles_for_user error: {e}")
         raise
 
-def create_default_account_for_user(user_id: str):
+
+def delete_auth_user(user_id):
+    if not user_id:
+        return
+
+    supabase_admin.auth.admin.delete_user(user_id)
+
+
+def create_default_account_for_user(user_id: str, workspace_id: str):
+    workspace_id = workspace_id or get_current_workspace_id()
+
     data = {
         "user_id": user_id,
+        "workspace_id": workspace_id,
         "account_type": "bank",
         "account_name": "حساب اصلی",
         "initial_balance": 0,
@@ -566,21 +968,47 @@ def create_default_account_for_user(user_id: str):
 
     return supabase.table("accounts").insert(data).execute()
 
-def copy_hazineha_template_for_user(user_id: str):
-    return supabase.rpc(
-        "copy_hazineha_template_for_user",
-        {"p_user_id": user_id}
+def create_default_workspace_for_user(user_id):
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    res = supabase.rpc(
+        "create_default_workspace_for_user",
+        {
+            "p_user_id": user_id,
+        }
     ).execute()
 
+    if not res.data:
+        raise Exception("Workspace was not created")
+
+    return res.data
+
+def copy_hazineha_template_for_user(user_id, workspace_id):
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    if not workspace_id:
+        raise ValueError("workspace_id is required")
+
+    res = supabase.rpc(
+        "copy_hazineha_template_for_user",
+        {
+            "p_user_id": user_id,
+            "p_workspace_id": workspace_id,
+        }
+    ).execute()
+
+    return res.data
 
 # ================= HAZINEHA / CATEGORY =================
 @lru_cache(maxsize=256)
-def _load_all_hazineha_for_user(user_id: str):
+def _load_all_hazineha_for_workspace(workspace_id: str):
     try:
         res = (
             supabase.table("hazineha")
-            .select("id,id_parent,title,keywords,embedding_text,updated_at,is_active,user_id,template_id")
-            .eq("user_id", user_id)
+            .select("id,id_parent,title,keywords,embedding_text,updated_at,is_active,user_id,template_id,workspace_id")
+            .eq("workspace_id", workspace_id)
             .order("id")
             .execute()
         )
@@ -599,46 +1027,51 @@ def _load_all_hazineha_for_user(user_id: str):
                 "is_active": bool(row.get("is_active", True)),
                 "user_id": row.get("user_id"),
                 "template_id": row.get("template_id"),
+                "workspace_id": row.get("workspace_id"),
             })
 
         return cleaned
 
     except Exception as e:
-        print(f"_load_all_hazineha_for_user error: {e}")
+        print(f"_load_all_hazineha_for_workspace error: {e}")
         return []
 
 
-def load_all_hazineha():
+def load_all_hazineha(workspace_id=None):
     try:
-        user = get_current_user()
-        if not user:
+        workspace_id = workspace_id or get_current_workspace_id()
+        if not workspace_id:
             return []
-        return _load_all_hazineha_for_user(user.id)
+
+        return _load_all_hazineha_for_workspace(workspace_id)
+
     except Exception as e:
         print(f"load_all_hazineha error: {e}")
         return []
 
 
 @lru_cache(maxsize=256)
-def _load_active_hazineha_for_user(user_id: str):
-    rows = _load_all_hazineha_for_user(user_id)
+def _load_active_hazineha_for_workspace(workspace_id: str):
+    rows = _load_all_hazineha_for_workspace(workspace_id)
     return [row for row in rows if row.get("is_active", True)]
 
 
-def load_active_hazineha():
+def load_active_hazineha(workspace_id=None):
     try:
-        user = get_current_user()
-        if not user:
+        workspace_id = workspace_id or get_current_workspace_id()
+        if not workspace_id:
             return []
-        return _load_active_hazineha_for_user(user.id)
+
+        return _load_active_hazineha_for_workspace(workspace_id)
+
     except Exception as e:
         print(f"load_active_hazineha error: {e}")
         return []
 
 
 @lru_cache(maxsize=256)
-def _load_leaf_hazineha_for_user(user_id: str):
-    rows = _load_active_hazineha_for_user(user_id)
+def _load_leaf_hazineha_for_workspace(workspace_id: str):
+    rows = _load_active_hazineha_for_workspace(workspace_id)
 
     parent_ids = {
         row["id_parent"]
@@ -647,6 +1080,7 @@ def _load_leaf_hazineha_for_user(user_id: str):
     }
 
     selected_rows = []
+
     for row in rows:
         is_leaf = row["id"] not in parent_ids
         has_keywords = bool(row.get("keywords"))
@@ -655,73 +1089,29 @@ def _load_leaf_hazineha_for_user(user_id: str):
         if is_leaf or has_keywords or has_embedding_text:
             selected_rows.append(row)
 
-    return [
-        {
-            "id": row["id"],
-            "title": row["title"],
-            "keywords": row.get("keywords", []),
-            "embedding_text": row.get("embedding_text", ""),
-            "is_active": row.get("is_active", True),
-            "user_id": row.get("user_id"),
-            "template_id": row.get("template_id"),
-        }
-        for row in selected_rows
-    ]
+    return selected_rows
 
 
-def load_leaf_hazineha():
-    try:
-        user = get_current_user()
-        if not user:
-            return []
-        return _load_leaf_hazineha_for_user(user.id)
-    except Exception as e:
-        print(f"load_leaf_hazineha error: {e}")
+def load_leaf_hazineha(workspace_id=None):
+    workspace_id = workspace_id or get_current_workspace_id()
+    if not workspace_id:
         return []
 
-
-@lru_cache(maxsize=1)
-def load_leaf_hazineha():
-    rows = load_active_hazineha()
-
-    parent_ids = {
-        row["id_parent"]
-        for row in rows
-        if row.get("id_parent") is not None
-    }
-
-    selected_rows = []
-    for row in rows:
-        is_leaf = row["id"] not in parent_ids
-        has_keywords = bool(row.get("keywords"))
-        has_embedding_text = bool((row.get("embedding_text") or "").strip())
-
-        if is_leaf or has_keywords or has_embedding_text:
-            selected_rows.append(row)
-
-    return [
-        {
-            "id": row["id"],
-            "title": row["title"],
-            "keywords": row.get("keywords", []),
-            "embedding_text": row.get("embedding_text", ""),
-            "is_active": row.get("is_active", True),
-        }
-        for row in selected_rows
-    ]
+    return _load_leaf_hazineha_for_workspace(workspace_id)
 
 
 def get_hazine_by_id(category_id):
     try:
-        user = get_current_user()
-        if not user:
-            return None
+        workspace_id = get_current_workspace_id()
+        # user = get_current_user()
+        # if not user:
+        #     return None
 
         res = (
             supabase.table("hazineha")
             .select("id,id_parent,title,keywords,embedding_text,updated_at,is_active,user_id,template_id")
             .eq("id", category_id)
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .single()
             .execute()
         )
@@ -739,6 +1129,7 @@ def get_hazine_by_id(category_id):
             "updated_at": row.get("updated_at"),
             "is_active": bool(row.get("is_active", True)),
             "user_id": row.get("user_id"),
+            "workspace_id": row.get("workspace_id"),
             "template_id": row.get("template_id"),
         }
 
@@ -748,14 +1139,15 @@ def get_hazine_by_id(category_id):
 
 def get_hazine_by_title(title):
     try:
-        user = get_current_user()
-        if not user:
-            return None
+        workspace_id = get_current_workspace_id()
+        # user = get_current_user()
+        # if not user:
+        #     return None
 
         res = (
             supabase.table("hazineha")
             .select("id,id_parent,title,keywords,embedding_text,updated_at,is_active,user_id,template_id")
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .eq("title", title)
             .limit(1)
             .execute()
@@ -775,6 +1167,7 @@ def get_hazine_by_title(title):
             "updated_at": row.get("updated_at"),
             "is_active": bool(row.get("is_active", True)),
             "user_id": row.get("user_id"),
+            "workspace_id": row.get("workspace_id"),
             "template_id": row.get("template_id"),
         }
 
@@ -789,8 +1182,11 @@ def create_hazine(title, id_parent=None, keywords=None, embedding_text=None, is_
         if not user:
             raise Exception("User is not logged in")
 
+        workspace_id = get_current_workspace_id()
+
         payload = {
             "user_id": user.id,
+            "workspace_id": workspace_id,
             "title": title,
             "id_parent": id_parent,
             "keywords": keywords if isinstance(keywords, list) else [],
@@ -810,9 +1206,10 @@ def create_hazine(title, id_parent=None, keywords=None, embedding_text=None, is_
     
 def update_hazine(category_id, title=None, id_parent=None, keywords=None, embedding_text=None, is_active=None):
     try:
-        user = get_current_user()
-        if not user:
-            raise Exception("User is not logged in")
+        workspace_id = get_current_workspace_id()
+        # user = get_current_user()
+        # if not user:
+        #     raise Exception("User is not logged in")
 
         payload = {}
 
@@ -838,7 +1235,7 @@ def update_hazine(category_id, title=None, id_parent=None, keywords=None, embedd
             supabase.table("hazineha")
             .update(payload)
             .eq("id", category_id)
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .execute()
         )
 
@@ -871,13 +1268,14 @@ def update_hazine_embedding(category_id, embedding_vector):
 
 def load_hazineha_with_embeddings(active_only=True):
     try:
-        user = get_current_user()
-        if not user:
-            return []
+        workspace_id = get_current_workspace_id()        
+        # user = get_current_user()
+        # if not user:
+        #     return []
 
         q = supabase.table("hazineha").select(
             "id,id_parent,title,keywords,embedding_text,embedding,is_active,updated_at,user_id,template_id"
-        ).eq("user_id", user.id)
+        ).eq("workspace_id", workspace_id)
 
         if active_only:
             q = q.eq("is_active", True)
@@ -897,6 +1295,7 @@ def load_hazineha_with_embeddings(active_only=True):
                 "is_active": bool(row.get("is_active", True)),
                 "updated_at": row.get("updated_at"),
                 "user_id": row.get("user_id"),
+                "workspace_id": row.get("workspace_id"),
                 "template_id": row.get("template_id"),
             })
 
@@ -909,14 +1308,16 @@ def load_hazineha_with_embeddings(active_only=True):
 # ================= CATEGORY LEARNING =================
 def get_learned_category_exact(normalized_text):
     try:
-        user = get_current_user()
-        if not user:
-            return None
+
+        workspace_id = get_current_workspace_id()        
+        # user = get_current_user()
+        # if not user:
+        #     return None
 
         res = (
             supabase.table("category_learning")
             .select("id,raw_text,normalized_text,category_id,source,confidence,use_count,last_used_at,created_at,updated_at")
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .eq("normalized_text", normalized_text)
             .order("use_count", desc=True)
             .limit(1)
@@ -933,14 +1334,15 @@ def get_learned_category_exact(normalized_text):
 
 def load_category_learning_rows():
     try:
-        user = get_current_user()
-        if not user:
-            return None
+        workspace_id = get_current_workspace_id()        
+        # user = get_current_user()
+        # if not user:
+        #     return None
 
         res = (
             supabase.table("category_learning")
             .select("id,raw_text,normalized_text,category_id,source,confidence,use_count,last_used_at,created_at,updated_at,embedding_text,embedding")
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .order("use_count", desc=True)
             .execute()
         )
@@ -978,8 +1380,11 @@ def upsert_category_learning(
     user = supabase.auth.get_user()
     user_id = user.user.id
 
+    workspace_id = get_current_workspace_id()
+
     data = {
         "user_id": user_id,
+        "workspace_id": workspace_id,
         "raw_text": raw_text,
         "normalized_text": normalized_text,
         "category_id": category_id,
@@ -1026,14 +1431,15 @@ def update_category_learning_embedding(learning_id, embedding_vector):
 
 def find_category_learning_exact(normalized_text: str):
     try:
-        user = get_current_user()
-        if not user:
-            return None
+        workspace_id = get_current_workspace_id()
+        # user = get_current_user()
+        # if not user:
+        #     return None
         
         res = (
             supabase.table("category_learning")
             .select("id, raw_text, normalized_text, category_id, hazineha(title)")
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .eq("normalized_text", normalized_text)
             .limit(1)
             .execute()
@@ -1093,15 +1499,17 @@ def load_all_costs():
     return supabase.table("cost").select("*").execute().data
 
 
-def load_my_costs():
-    user = get_current_user()
-    if not user:
-        return []
-
+def load_my_costs(workspace_id):
+    return supabase.table("cost") \
+        .select("*") \
+        .eq("workspace_id", workspace_id) \
+        .execute()
+    
+    workspace_id = get_current_workspace_id()
     return (
         supabase.table("cost")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .order("id", desc=True)
         .execute()
         .data
@@ -1145,15 +1553,17 @@ def get_cost_by_id(cost_id):
 
 def get_my_cost_by_id(cost_id):
     try:
-        user = get_current_user()
-        if not user:
-            return None
+
+        # user = get_current_user()
+        # if not user:
+        #     return None
+        workspace_id = get_current_workspace_id()
 
         row = (
             supabase.table("cost")
             .select("*")
             .eq("id", cost_id)
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .single()
             .execute()
             .data
@@ -1170,7 +1580,7 @@ def get_my_cost_by_id(cost_id):
                 supabase.table("hazineha")
                 .select("title")
                 .eq("id", category_id)
-                .eq("user_id", user.id)
+                .eq("workspace_id", workspace_id)
                 .limit(1)
                 .execute()
                 .data
@@ -1185,7 +1595,7 @@ def get_my_cost_by_id(cost_id):
                 supabase.table("members")
                 .select("full_name")
                 .eq("id", member_id)
-                .eq("user_id", user.id)
+                .eq("workspace_id", workspace_id)
                 .limit(1)
                 .execute()
                 .data
@@ -1218,13 +1628,17 @@ def insert_cost(data):
     return supabase.table("cost").insert(data).execute().data[0]
 
 
+
 def insert_cost_for_current_user(data):
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
 
+    workspace_id = data.get("workspace_id") or get_current_workspace_id()
+
     payload = dict(data)
     payload["user_id"] = user.id
+    payload["workspace_id"] = workspace_id
 
     result = supabase.table("cost").insert(payload).execute()
     return result.data[0] if result.data else None
@@ -1260,9 +1674,8 @@ def update_cost(cost_id, title, price, date_cost, id_hazine, member_id=None):
     return row
 
 def update_my_cost(cost_id, title, price, date_cost, id_hazine, member_id=None, account_id=None):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id()
 
     supabase.table("cost").update({
         "price": price,
@@ -1271,55 +1684,17 @@ def update_my_cost(cost_id, title, price, date_cost, id_hazine, member_id=None, 
         "id_hazine": id_hazine,
         "member_id": member_id,
         "account_id": account_id,
-    }).eq("id", cost_id).eq("user_id", user.id).execute()
+    }).eq("id", cost_id).eq("workspace_id", workspace_id).execute()
 
     row = (
         supabase.table("cost")
         .select("*")
         .eq("id", cost_id)
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .single()
         .execute()
         .data
     )
-
-    cat = (
-        supabase.table("hazineha")
-        .select("title")
-        .eq("id", id_hazine)
-        .eq("user_id", user.id)
-        .single()
-        .execute()
-        .data
-    )
-
-    member_name = ""
-    if member_id:
-        member = (
-            supabase.table("members")
-            .select("full_name")
-            .eq("id", member_id)
-            .eq("user_id", user.id)
-            .single()
-            .execute()
-            .data
-        )
-        member_name = member.get("full_name", "") if member else ""
-
-    row["category_title"] = cat.get("title", "") if cat else ""
-    row["member_name"] = member_name
-
-    account_name = ""
-    account_type = ""
-
-    if account_id:
-        acc = find_account_by_id(account_id)
-        if acc:
-            account_name = acc.get("account_name", "")
-            account_type = acc.get("account_type", "")
-
-    row["account_name"] = account_name
-    row["account_type"] = account_type
 
     return row
 
@@ -1328,17 +1703,23 @@ def delete_cost(cost_id):
 
 
 def delete_my_cost(cost_id):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        return
 
-    supabase.table("cost").delete().eq("id", cost_id).eq("user_id", user.id).execute()
-
+    supabase.table("cost") \
+        .delete() \
+        .eq("id", cost_id) \
+        .eq("workspace_id", workspace_id) \
+        .execute()
 
 def load_costs(start_date, end_date):
+
+    workspace_id = get_current_workspace_id()
     cost_rows = (
         supabase.table("cost")
         .select("*")
+        .eq("workspace_id", workspace_id)
         .gte("date_cost", start_date)
         .lte("date_cost", end_date)
         .order("id", desc=True)
@@ -1360,56 +1741,17 @@ def load_costs(start_date, end_date):
 
     return cost_rows
 
-def load_my_costs_by_date(start_date, end_date):
-    user = get_current_user()
-    if not user:
-        return []
-
-    cost_rows = (
-        supabase.table("cost")
-        .select("*")
-        .eq("user_id", user.id)
-        .gte("date_cost", start_date)
-        .lte("date_cost", end_date)
-        .order("id", desc=True)
-        .execute()
-        .data
-    ) or []
-
-    categories = (
-        supabase.table("hazineha")
-        .select("id,title")
-        .eq("user_id", user.id)
-        .execute()
-        .data
-    ) or []
-
-    members = (
-        supabase.table("members")
-        .select("id,full_name")
-        .eq("user_id", user.id)
-        .execute()
-        .data
-    ) or []
-
-    category_map = {c["id"]: c["title"] for c in categories}
-    member_map = {m["id"]: m["full_name"] for m in members}
-
-    for row in cost_rows:
-        row["category_title"] = category_map.get(row.get("id_hazine"), "")
-        row["member_name"] = member_map.get(row.get("member_id"), "")
-
-    return cost_rows
 
 def get_hazine_id(title):
-    user = get_current_user()
-    if not user:
-        return 0
+    # user = get_current_user()
+    # if not user:
+    #     return 0
 
+    workspace_id = get_current_workspace_id()
     res = (
         supabase.table("hazineha")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("title", title)
         .limit(1)
         .execute()
@@ -1431,14 +1773,15 @@ def find_account_by_name(account_name):
     if not account_name:
         return None
 
-    user = get_current_user()
-    if not user:
-        return None
+    # user = get_current_user()
+    # if not user:
+    #     return None
+    workspace_id = get_current_workspace_id()
 
     res = (
         supabase.table("accounts")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .ilike("account_name", account_name)
         .limit(1)
         .execute()
@@ -1450,15 +1793,16 @@ def find_account_by_id(account_id):
     if not account_id:
         return None
 
-    user = get_current_user()
-    if not user:
-        return None
+    # user = get_current_user()
+    # if not user:
+    #     return None
+    workspace_id = get_current_workspace_id()
 
     res = (
         supabase.table("accounts")
         .select("id, account_name, account_type")
         .eq("id", account_id)
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .limit(1)
         .execute()
     )
@@ -1466,14 +1810,15 @@ def find_account_by_id(account_id):
     return res.data[0] if res.data else None
 
 def get_default_account():
-    user = get_current_user()
-    if not user:
-        return None
+    # user = get_current_user()
+    # if not user:
+    #     return None
+    workspace_id = get_current_workspace_id()
 
     res = (
         supabase.table("accounts")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("is_default", True)
         .limit(1)
         .execute()
@@ -1482,14 +1827,15 @@ def get_default_account():
     return res.data[0] if res.data else None
 
 def get_accounts():
-    user = get_current_user()
-    if not user:
-        return []
+    # user = get_current_user()
+    # if not user:
+    #     return []
+    workspace_id = get_current_workspace_id()
 
     res = (
         supabase.table("accounts")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("is_active", True)
         .order("created_at")
         .execute()
@@ -1499,6 +1845,7 @@ def get_accounts():
 
 def create_account(account_type, account_name, initial_balance, #currency, 
                    is_default):
+    workspace_id = get_current_workspace_id()
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
@@ -1506,13 +1853,14 @@ def create_account(account_type, account_name, initial_balance, #currency,
     if is_default:
         supabase.table("accounts") \
             .update({"is_default": False}) \
-            .eq("user_id", user.id) \
+            .eq("workspace_id", workspace_id) \
             .execute()
 
     keywords = generate_account_keywords(account_type, account_name)
 
     payload = {
         "user_id": user.id,
+        "workspace_id": workspace_id,
         "account_type": account_type,
         "account_name": account_name,
         "keywords": keywords,
@@ -1527,14 +1875,15 @@ def create_account(account_type, account_name, initial_balance, #currency,
 
 def update_account(account_id, account_type, account_name, initial_balance,# currency,
                     is_default):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User is not logged in")
+    workspace_id = get_current_workspace_id()
 
     if is_default:
         supabase.table("accounts") \
             .update({"is_default": False}) \
-            .eq("user_id", user.id) \
+            .eq("workspace_id", workspace_id) \
             .execute()
 
     keywords = generate_account_keywords(account_type, account_name)
@@ -1552,7 +1901,7 @@ def update_account(account_id, account_type, account_name, initial_balance,# cur
         supabase.table("accounts")
         .update(payload)
         .eq("id", account_id)
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .execute()
     )
 
@@ -1566,7 +1915,7 @@ def delete_account(account_id):
     supabase.table("accounts") \
         .update({"is_active": False}) \
         .eq("id", account_id) \
-        .eq("user_id", user.id) \
+        .eq("workspace_id", workspace_id) \
         .execute()
     
 def generate_account_keywords(account_type, account_name):
@@ -1608,9 +1957,11 @@ def create_transaction(
     user = get_current_user()
     if not user:
         raise Exception("User not logged in")
-
+    
+    workspace_id = get_current_workspace_id()
     payload = {
         "user_id": user.id,
+        "workspace_id": workspace_id,
         "type": type,
         "title": title,
         "amount": amount,
@@ -1628,14 +1979,15 @@ def create_transaction(
 
 
 def get_transactions(type=None):
-    user = get_current_user()
-    if not user:
-        return []
+    # user = get_current_user()
+    # if not user:
+    #     return []
+    workspace_id = get_current_workspace_id()
 
     q = (
         supabase.table("transactions")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("is_active", True)
     )
 
@@ -1657,9 +2009,10 @@ def update_transaction(
     repeat_day=None,
     is_active=True,
 ):
-    user = get_current_user()
-    if not user:
-        raise Exception("User not logged in")
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User not logged in")
+    workspace_id = get_current_workspace_id()
 
     payload = {
         "title": title,
@@ -1676,7 +2029,7 @@ def update_transaction(
         supabase.table("transactions")
         .update(payload)
         .eq("id", tx_id)
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .execute()
     )
 
@@ -1688,22 +2041,28 @@ def update_transaction(
 
 # ================= INCOME TRANSACTIONS =================
 
-def get_income_transactions_by_month(year_month):
-    user = get_current_user()
-    if not user:
-        return []
+def get_income_transactions_by_month(year_month, workspace_id=None):
+    # user = get_current_user()
+    # if not user:
+    #     return []
 
-    res = (
+    if not workspace_id:
+        profile = get_my_profile()
+        workspace_id = profile.get("current_workspace_id") if profile else None
+
+    q = (
         supabase.table("income_transactions")
         .select("*")
-        .eq("user_id", user.id)
-        .eq("is_active", True)
+        .eq("workspace_id", workspace_id)
         .eq("year_month", year_month)
-        .order("transaction_date", desc=True)
-        .execute()
+        .eq("is_active", True)
     )
-    return res.data or []
 
+    if workspace_id:
+        q = q.eq("workspace_id", workspace_id)
+
+    res = q.execute()
+    return res.data or []
 def create_income_transaction(
     title,
     amount,
@@ -1719,8 +2078,11 @@ def create_income_transaction(
 
     year_month = transaction_date[:7]
 
+    workspace_id = get_current_workspace_id()
+
     payload = {
         "user_id": user.id,
+        "workspace_id": workspace_id,
         "title": title,
         "amount": amount,
         "transaction_date": transaction_date,
@@ -1745,10 +2107,12 @@ def update_income_transaction(
     status="confirmed",
     note=None,
 ):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User is not logged in")
 
+    workspace_id = get_current_workspace_id()
+    
     year_month = transaction_date[:7]
 
     payload = {
@@ -1766,109 +2130,60 @@ def update_income_transaction(
         supabase.table("income_transactions")
         .update(payload)
         .eq("id", tx_id)
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .execute()
     )
     return res.data[0] if res.data else None
 
 
 def delete_income_transaction(tx_id):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User is not logged in")
+    workspace_id = get_current_workspace_id()
 
     supabase.table("income_transactions") \
-        .update({"is_active": False}) \
+        .delete() \
         .eq("id", tx_id) \
-        .eq("user_id", user.id) \
+        .eq("workspace_id", workspace_id) \
         .execute()
 
 
 # --------------transaction------------
-def get_financial_summary(start_date, end_date):
-    user = get_current_user()
-    if not user:
-        return {
-            "balance": 0,
-            "income": 0,
-            "expense": 0,
-            "left": 0,
-        }
+def get_financial_summary(start_date, end_date, workspace_id=None):
+    # user = get_current_user()
+    # if not user:
+    #     return {"expense": 0}
+    workspace_id = get_current_workspace_id()
 
-    accounts = (
-        supabase.table("accounts")
-        .select("initial_balance")
-        .eq("user_id", user.id)
-        .eq("is_active", True)
-        .execute()
-        .data
-    ) or []
+    if not workspace_id:
+        profile = get_my_profile()
+        workspace_id = profile.get("current_workspace_id") if profile else None
 
-    initial_balance = sum(
-        float(a.get("initial_balance") or 0)
-        for a in accounts
-    )
-
-    # ✅ درآمد از جدول جدید income_transactions
-    income_rows = (
-        supabase.table("income_transactions")
-        .select("amount")
-        .eq("user_id", user.id)
-        .eq("is_active", True)
-        .eq("status", "confirmed")
-        .gte("transaction_date", start_date)
-        .lte("transaction_date", end_date)
-        .execute()
-        .data
-    ) or []
-
-    income = sum(
-        float(r.get("amount") or 0)
-        for r in income_rows
-    )
-
-
-
-    today = today_local()
-    start_month = today.replace(day=1)
-
-    if today.month == 12:
-        next_month = today.replace(year=today.year + 1, month=1, day=1)
-    else:
-        next_month = today.replace(month=today.month + 1, day=1)
-
-    cost_rows = (
+    q = (
         supabase.table("cost")
         .select("price")
-        .eq("user_id", user.id)
-        .gte("date_cost", start_month.isoformat())
-        .lt("date_cost", next_month.isoformat())   # 👈 بهتر از lte
-        .execute()
-        .data
-    ) or []
-
-    expense = sum(
-        float(r.get("price") or 0)
-        for r in cost_rows
+        .eq("workspace_id", workspace_id)
+        # .eq("user_id", user.id)
+        .gte("date_cost", start_date)
+        .lte("date_cost", end_date)
     )
 
-    balance = initial_balance + income - expense
-    left = income - expense
+    if workspace_id:
+        q = q.eq("workspace_id", workspace_id)
 
-    return {
-        "balance": balance,
-        "income": income,
-        "expense": expense,
-        "left": left,
-    }
+    res = q.execute()
 
+    expense = sum(float(r.get("price") or 0) for r in (res.data or []))
 
-
+    return {"expense": expense}
 
 def carry_monthly_income_to_current_month():
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id()
 
     today = today_local()
     current_ym = today.strftime("%Y-%m")
@@ -1877,7 +2192,7 @@ def carry_monthly_income_to_current_month():
     monthly_rows = (
         supabase.table("income_transactions")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("is_active", True)
         .eq("income_type", "monthly")
         .neq("status", "cancelled")
@@ -1893,7 +2208,7 @@ def carry_monthly_income_to_current_month():
         exists = (
             supabase.table("income_transactions")
             .select("id")
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .eq("income_type", "monthly")
             .eq("year_month", current_ym)
             .eq("title", row.get("title"))
@@ -1908,6 +2223,7 @@ def carry_monthly_income_to_current_month():
 
         payload = {
             "user_id": user.id,
+            "workspace_id": workspace_id,
             "title": row.get("title"),
             "amount": row.get("amount"),
             "transaction_date": today_iso,
@@ -1928,7 +2244,7 @@ def carry_monthly_income_to_current_month():
             # رکورد قبلی تیک بخورد که منتقل شده
             supabase.table("income_transactions").update({
                 "carried_forward": True,
-            }).eq("id", row["id"]).eq("user_id", user.id).execute()
+            }).eq("id", row["id"]).eq("workspace_id", workspace_id).execute()
 
     return created
 
@@ -1943,16 +2259,18 @@ def get_month_start(date_text: str):
 
 
 def get_budgets_by_month(year_month: str):
-    user = get_current_user()
-    if not user:
-        return []
+    # user = get_current_user()
+    # if not user:
+    #     return []
+
+    workspace_id = get_current_workspace_id()
 
     period_start = get_month_start(year_month)
 
     res = (
         supabase.table("budgets")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("period_start", period_start)
         .order("created_at")
         .execute()
@@ -1969,15 +2287,16 @@ def get_budget_page_data(year_month: str):
     - spent از cost
     """
 
-    user = get_current_user()
-    print("BUDGET USER:", user)    
-    if not user:
-        return {
-            "categories": [],
-            "budgets": [],
-            "costs": [],
-        }
+    # user = get_current_user()
+    # print("BUDGET USER:", user)    
+    # if not user:
+    #     return {
+    #         "categories": [],
+    #         "budgets": [],
+    #         "costs": [],
+    #     }
 
+    workspace_id = get_current_workspace_id()
     period_start = get_month_start(year_month)
 
     year = int(period_start[:4])
@@ -1996,7 +2315,7 @@ def get_budget_page_data(year_month: str):
     budgets = (
         supabase.table("budgets")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("period_start", period_start)
         .execute()
         .data
@@ -2005,7 +2324,7 @@ def get_budget_page_data(year_month: str):
     costs = (
         supabase.table("cost")
         .select("id, price, id_hazine, date_cost")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .gte("date_cost", start_date.isoformat())
         .lt("date_cost", end_date.isoformat())
         .execute()
@@ -2094,6 +2413,8 @@ def upsert_budget(category_id, amount, year_month: str):
     if not user:
         raise Exception("User is not logged in")
 
+    workspace_id = get_current_workspace_id()
+
     period_start = get_month_start(year_month)
 
     if has_budget_conflict(category_id, year_month):
@@ -2101,6 +2422,7 @@ def upsert_budget(category_id, amount, year_month: str):
 
     payload = {
         "user_id": user.id,
+        "workspace_id": workspace_id,
         "category_id": category_id,
         "amount": float(amount),
         "period_type": "monthly",
@@ -2120,15 +2442,17 @@ def upsert_budget(category_id, amount, year_month: str):
 
 
 def delete_budget(category_id, year_month: str):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    # user = get_current_user()
+    # if not user:
+    #     raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id()
 
     period_start = get_month_start(year_month)
 
     supabase.table("budgets") \
         .delete() \
-        .eq("user_id", user.id) \
+        .eq("workspace_id", workspace_id) \
         .eq("category_id", category_id) \
         .eq("period_start", period_start) \
         .execute()
@@ -2146,9 +2470,11 @@ def calculate_budget_spent(categories, costs, category_id):
     return total
 
 def carry_budgets_to_current_month():
-    user = get_current_user()
-    if not user:
-        return []
+    # user = get_current_user()
+    # if not user:
+    #     return []
+
+    workspace_id = get_current_workspace_id()
 
 
     today = today_local()
@@ -2170,7 +2496,7 @@ def carry_budgets_to_current_month():
     prev_budgets = (
         supabase.table("budgets")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("period_start", prev_start)
         .eq("carried_forward", False)
         .execute()
@@ -2184,7 +2510,7 @@ def carry_budgets_to_current_month():
         exists = (
             supabase.table("budgets")
             .select("id")
-            .eq("user_id", user.id)
+            .eq("workspace_id", workspace_id)
             .eq("category_id", row["category_id"])
             .eq("period_start", current_start)
             .limit(1)
@@ -2196,7 +2522,8 @@ def carry_budgets_to_current_month():
             continue
 
         payload = {
-            "user_id": user.id,
+            # "user_id": user.id,
+            "workspace_id": workspace_id,
             "category_id": row["category_id"],
             "amount": row["amount"],
             "period_type": "monthly",
@@ -2212,7 +2539,7 @@ def carry_budgets_to_current_month():
             # تیک بزن که منتقل شده
             supabase.table("budgets").update({
                 "carried_forward": True
-            }).eq("id", row["id"]).eq("user_id", user.id).execute()
+            }).eq("id", row["id"]).eq("workspace_id", workspace_id).execute()
 
     return created
 
@@ -2221,9 +2548,11 @@ def carry_budgets_to_current_month():
 
 
 def get_current_month_dashboard_data(year_month=None):
-    user = get_current_user()
-    if not user:
-        return None
+    # user = get_current_user()
+    # if not user:
+    #     return None
+
+    workspace_id = get_current_workspace_id()
 
     today = today_local()
 
@@ -2246,7 +2575,7 @@ def get_current_month_dashboard_data(year_month=None):
     income_rows = (
         supabase.table("income_transactions")
         .select("amount")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .eq("is_active", True)
         .eq("status", "confirmed")
         .eq("year_month", year_month)
@@ -2260,7 +2589,7 @@ def get_current_month_dashboard_data(year_month=None):
     cost_rows = (
         supabase.table("cost")
         .select("id,title,price,date_cost,id_hazine")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .gte("date_cost", start_date.isoformat())
         .lte("date_cost", end_date.isoformat())
         .execute()
@@ -2286,7 +2615,7 @@ def get_current_month_dashboard_data(year_month=None):
     prev_cost_rows = (
         supabase.table("cost")
         .select("price")
-        .eq("user_id", user.id)
+        .eq("workspace_id", workspace_id)
         .gte("date_cost", prev_start.isoformat())
         .lte("date_cost", prev_end.isoformat())
         .execute()

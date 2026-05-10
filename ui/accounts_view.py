@@ -70,6 +70,7 @@ def accounts_view(page: ft.Page):
         keyboard_type=ft.KeyboardType.NUMBER,
         expand=True,
         border_radius=14,
+        text_size=11,
     )
 
     transfer_date = ft.TextField(
@@ -77,6 +78,8 @@ def accounts_view(page: ft.Page):
         value=date.today().isoformat(),
         expand=True,
         border_radius=14,
+        text_size=11,
+        read_only=True,
     )
 
     transfer_note = ft.TextField(
@@ -632,7 +635,7 @@ def accounts_view(page: ft.Page):
                     safe_update()
                     page.app_go("hazinaha_view")
 
-                members_data = get_members()
+                members_data = get_members(page)
                 member_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
                 member_search = ft.TextField(
                     hint_text="Search member",
@@ -1605,6 +1608,11 @@ def accounts_view(page: ft.Page):
         if ctx:
             open_account_transactions(ctx["account"], ctx["balance"])
 
+    def go_back(e=None):
+        page.data["sabtehazine_changed"] = True
+        page.data["sabtehazine_loaded"] = False
+        page.app_go("sabtehazine")
+
     return ft.View(
         route="/accounts",
         bgcolor="#F8FAFC",
@@ -1626,7 +1634,7 @@ def accounts_view(page: ft.Page):
                     icon_size=18,  # 👈 آیکون کوچکتر
                     width=36,
                     height=36,
-                    on_click=lambda e: page.app_go("sabtehazine"),
+                    on_click=go_back,
                 ),
             ),
             ft.Container(

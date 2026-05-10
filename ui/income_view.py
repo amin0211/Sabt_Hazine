@@ -406,6 +406,11 @@ def income_view(page: ft.Page):
     month_tf.on_submit = change_month
     month_tf.on_blur = change_month
 
+    def go_back(e=None):
+        page.data["sabtehazine_changed"] = True
+        page.data["sabtehazine_loaded"] = False
+        page.app_go("sabtehazine")
+
     header_card = ft.Container(
         padding=14,
         border_radius=16,
@@ -416,7 +421,7 @@ def income_view(page: ft.Page):
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
                     tooltip="Back",
-                    on_click=lambda e: page.app_go("sabtehazine"),
+                    on_click=go_back,
                 ),
                 month_tf,
                 ft.IconButton(

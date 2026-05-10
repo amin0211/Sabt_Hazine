@@ -253,6 +253,7 @@ def GanttChart_view(page: ft.Page, theme):
         all_hazineha = load_all_hazineha()
 
         all_costs = load_my_costs_by_date(
+            page, 
             start_date.isoformat(),
             end_date.isoformat()
         )

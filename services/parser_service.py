@@ -339,7 +339,6 @@ def resolve_by_learning_embedding(title_n: str):
         threshold=0.60,
     )
 
-    print("EMBEDDING LEARNING MATCH =", learning_match)
 
     if learning_match and learning_match.get("category_id"):
         return {
@@ -356,8 +355,8 @@ def parse_expense(text):
     result = fallback_result(text)
 
     try:
-        print("========== PARSE START ==========")
-        print("INPUT =", repr(text))
+        # print("========== PARSE START ==========")
+        # print("INPUT =", repr(text))
 
         extracted = None
         if is_openai_available():
@@ -393,7 +392,7 @@ def parse_expense(text):
             "suggestions": category_result.get("suggestions", []),
         }
 
-        print("========== PARSE END ==========")
+        # print("========== PARSE END ==========")
 
         return final_result
 

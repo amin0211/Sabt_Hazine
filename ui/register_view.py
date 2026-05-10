@@ -4,9 +4,11 @@ import asyncio
 from services.supabase_service import (
     sign_up_user,
     update_profile,
+    create_default_workspace_for_user,
     copy_hazineha_template_for_user,
     create_default_account_for_user,
     get_languages,
+    delete_auth_user,
 )
 from services.utils import is_valid_email
 
@@ -120,62 +122,75 @@ def register_view(page: ft.Page):
     language_dropdown.on_change = on_language_change
 
     async def register_async(e):
+
+        user = None  # 👈 مهم
+
         try:
             em = (email.value or "").strip().lower()
             pwd = password.value or ""
             cpwd = confirm_password.value or ""
+
             first_name = (name.value or "").strip()
             last_name = (family.value or "").strip()
             bdate = (birthdate.value or "").strip()
             selected_language_id = language_dropdown.value
-
-            if not em or not pwd or not cpwd:
-                show_message("Email, password and confirm password are required.")
-                return
-
-            if not is_valid_email(em):
-                show_message("Invalid email format.")
-                return
-
-            if pwd != cpwd:
-                show_message("Passwords do not match.")
-                return
-
-            if len(pwd) < 6:
-                show_message("Password must be at least 6 characters.")
-                return
-
+            # validation...
+            print(em)
             set_loading(True)
 
             auth_res = await asyncio.to_thread(sign_up_user, em, pwd)
             user = auth_res.user
 
             if not user:
-                set_loading(False)
-                show_message("Registration failed.")
-                return
+                raise Exception("Registration failed")
 
+            # ✅ پروفایل
             await asyncio.to_thread(
                 update_profile,
                 user.id,
                 {
                     "name": first_name,
                     "family": last_name,
+                    "email": em,
                     "birthdate": bdate if bdate else None,
                     "language_id": int(selected_language_id) if selected_language_id else None,
                 }
             )
 
-            # این باید همان تابع RPC باشد که در supabase_service تعریف کردی
-            await asyncio.to_thread(copy_hazineha_template_for_user, user.id)
-            
-            await asyncio.to_thread(create_default_account_for_user, user.id)
+            # ✅ workspace
+            workspace_id = await asyncio.to_thread(
+                create_default_workspace_for_user,
+                user.id
+            )
+
+            # ✅ hazineha
+            await asyncio.to_thread(
+                copy_hazineha_template_for_user,
+                user.id,
+                workspace_id
+            )
+
+            # ✅ account (اینجا اگر fail کنه باید rollback بشه)
+            await asyncio.to_thread(
+                create_default_account_for_user,
+                user.id,
+                workspace_id
+            )
 
             set_loading(False)
             page.app_go("login")
 
+ 
         except Exception as ex:
             print("REGISTER ERROR:", ex)
+
+            if user and user.id:
+                try:
+                    await asyncio.to_thread(delete_auth_user, user.id)
+                    print("ROLLBACK USER DELETED:", user.id)
+                except Exception as delete_ex:
+                    print("DELETE USER ERROR:", delete_ex)
+
             set_loading(False)
             show_message(f"Error: {ex}")
 
