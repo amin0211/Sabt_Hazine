@@ -380,16 +380,41 @@ def build_chat_ui(
 
         dlg = ft.AlertDialog(modal=True)
 
+
         def choose(cat):
             parsed_result["category_id"] = cat["category_id"]
             parsed_result["category_title"] = cat["category_title"]
-            # parsed_result["title"] = cat["category_title"]
             parsed_result["matched"] = True
+
+            # ✅ وقتی کاربر از پیشنهادهای پارسر انتخاب می‌کند
+            new_category_id = parsed_result.get("category_id")
+
+
+            if new_category_id:
+                raw_text = parsed_result.get("temp_hazine") or parsed_result.get("title", "")
+                normalized_text = normalize_text(raw_text)
+
+                learning_row = upsert_category_learning(
+                    raw_text=raw_text,
+                    normalized_text=normalized_text,
+                    category_id=new_category_id,
+                    source="user_corrected",
+                    embedding_text=normalized_text
+                )
+
+                if learning_row:
+                    embedding_vector = get_embedding(normalized_text)
+
+                    if embedding_vector:
+                        update_category_learning_embedding(
+                            learning_row["id"],
+                            embedding_vector
+                        )
 
             dlg.open = False
             page.update()
             on_confirm(parsed_result)
-
+            
         def close_dlg(e=None):
             dlg.open = False
             page.update()
@@ -731,6 +756,7 @@ def build_chat_ui(
 
                         ft.Column(
                             [
+                                # Title
                                 ft.Text(
                                     ws.get("title") or "Workspace",
                                     size=13,
@@ -739,41 +765,49 @@ def build_chat_ui(
                                     max_lines=1,
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                 ),
-                                ft.Text(
-                                    subtitle,
-                                    size=10,
-                                    color="#64748B",
-                                    max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS,
+
+                                # 👇 Subtitle + Owner در یک ردیف
+                                ft.Row(
+                                    [
+                                        # Subtitle (سمت چپ)
+                                        ft.Text(
+                                            subtitle,
+                                            size=10,
+                                            color="#64748B",
+                                            max_lines=1,
+                                            overflow=ft.TextOverflow.ELLIPSIS,
+                                            expand=True,   # 👈 خیلی مهم
+                                        ),
+                                        # 👇 تیک انتخاب
+                                        ft.Icon(
+                                            ft.Icons.CHECK_CIRCLE_ROUNDED,
+                                            size=16,
+                                            color="#22C55E",
+                                            visible=is_selected,
+                                        ),
+
+                                        # 👇 Owner (badge)
+                                        ft.Container(
+                                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                            border_radius=12,
+                                            bgcolor=badge_bg,
+                                            content=ft.Text(
+                                                badge,
+                                                size=8,
+                                                weight=ft.FontWeight.W_600,
+                                                color=badge_color,
+                                            ),
+                                        ),
+
+                                    ],
+                                    spacing=6,
+                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                 ),
                             ],
                             spacing=2,
                             expand=True,
-                        ),
+                        )
 
-                        ft.Column(
-                            [
-                                ft.Container(
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
-                                    border_radius=20,
-                                    bgcolor=badge_bg,
-                                    content=ft.Text(
-                                        badge,
-                                        size=9,
-                                        weight=ft.FontWeight.W_700,
-                                        color=badge_color,
-                                    ),
-                                ),
-                                ft.Icon(
-                                    ft.Icons.CHECK_CIRCLE_ROUNDED,
-                                    size=18,
-                                    color="#22C55E",
-                                    visible=is_selected,
-                                ),
-                            ],
-                            spacing=5,
-                            horizontal_alignment=ft.CrossAxisAlignment.END,
-                        ),
                     ],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -923,7 +957,7 @@ def build_chat_ui(
                                         ft.GestureDetector(
                                             on_tap=open_workspace_picker,
                                             content=ft.Container(
-                                                width=170,
+                                                width=160,
                                                 height=30,
                                                 padding=ft.padding.only(left=8, right=6),
                                                 border_radius=12,

@@ -30,30 +30,49 @@ supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # --------------WorkSpace ------------------
 def load_my_costs_by_date(page, start_date, end_date):
-    # user = get_current_user()
-    # if not user:
-    #     return []
 
     workspace_id = get_current_workspace_id(page)
-
-    if not workspace_id:
-        profile = get_my_profile()
-        workspace_id = profile.get("current_workspace_id") if profile else None
 
     q = (
         supabase.table("cost")
         .select("*")
         .gte("date_cost", start_date)
         .lte("date_cost", end_date)
-        .order("date_cost", desc=True)
+        .order("id", desc=True)
     )
 
     if workspace_id:
         q = q.eq("workspace_id", workspace_id)
 
     res = q.execute()
-    return res.data or []
+    rows = res.data or []
 
+    # ✅ اضافه کردن category_title
+    category_ids = list({
+        r.get("id_hazine")
+        for r in rows
+        if r.get("id_hazine")
+    })
+
+    category_map = {}
+
+    if category_ids:
+        cat_res = (
+            supabase.table("hazineha")
+            .select("id,title")
+            .in_("id", category_ids)
+            .execute()
+        )
+
+        category_map = {
+            c["id"]: c["title"]
+            for c in (cat_res.data or [])
+        }
+
+    for r in rows:
+        r["category_title"] = category_map.get(r.get("id_hazine"), "")
+
+    return rows
 
 def add_user_to_workspace(workspace_id, email, role="member"):
     profile_res = (
