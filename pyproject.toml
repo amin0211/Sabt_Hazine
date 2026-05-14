@@ -1,7 +1,7 @@
 [project]
-name = "sabte_hazine"
-version = "1.0.0"
-description = "Sabt Hazine app"
+name = "costio"
+version = "1.0.7"
+description = "Smart expense tracker with shared workspaces and budgeting."
 requires-python = ">=3.10"
 
 dependencies = [
@@ -14,19 +14,21 @@ dependencies = [
     "openai>=2.0.0",
     "supabase>=2.0.0",
     "gunicorn",
-
-    # 🎤 Android STT
     "flet-stt==0.1.5",
-
-    # 💻 Desktop recording
     "sounddevice",
     "soundfile",
     "numpy",
+    "google-api-python-client",
+    "google-auth",
 ]
 
 [tool.flet]
+org = "com.pps"
+product = "Costio"
 permissions = ["microphone"]
+build_number = 7
 
 [tool.flet.android.permission]
 "android.permission.RECORD_AUDIO" = true
 "android.permission.MODIFY_AUDIO_SETTINGS" = true
+"com.android.vending.BILLING" = true

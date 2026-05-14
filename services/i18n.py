@@ -1,6 +1,7 @@
 translations = {
     "fa": {
         "profile": "پروفایل",
+        "suscription": "اشتراک و پلن‌ها",
         "members": "اعضا",
         "workspaces_view": "فضای کاری",
         "dashboard": "داشبور",
@@ -56,6 +57,7 @@ translations = {
     "en": {
 
         "profile": "Profile",
+        "suscription": "suscription",
         "members": "Members",
         "workspaces_view": "workspaces_view",
         "dashboard": "dashboard",

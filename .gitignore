@@ -7,3 +7,5 @@ backup/
 *.pyc
 __pycache__/
 *.wav
+Images/
+flutter/

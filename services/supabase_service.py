@@ -2772,3 +2772,39 @@ def get_current_month_dashboard_data(year_month=None):
         "biggest_expense": biggest_expense,
         "insights": insights[:3],
     }
+
+
+# ================= SUBSCRIPTION =================
+
+def get_my_subscription():
+    user = get_current_user()
+    if not user:
+        return None
+
+    res = (
+        supabase.table("user_subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    rows = res.data or []
+    return rows[0] if rows else None
+
+
+def is_user_pro():
+    sub = get_my_subscription()
+
+    if not sub:
+        return False
+
+    if sub.get("status") != "active":
+        return False
+
+    end = sub.get("current_period_end")
+    if not end:
+        return False
+
+    return True

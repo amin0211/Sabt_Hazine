@@ -60,6 +60,7 @@ from ui.dashboard_view import dashboard_view
 from ui.trend_view import trend_view
 from ui.cost_report_view import cost_report_view
 from ui.workspace_view import workspaces_view
+from ui.subscription_view import subscription_view
 
 
 
@@ -88,7 +89,7 @@ def main(page: ft.Page):
     page.window.full_screen = False
     page.window.width = 420
     page.window.height = 800
-    page.window.center()
+    # page.window.center()
 
     if page.data is None:
         page.data = {}
@@ -172,6 +173,11 @@ def main(page: ft.Page):
 
         elif view_name == "profile":
             view = profile_view(page)
+            view.route = "/"
+            page.views.append(apply_bg(view))
+
+        elif view_name == "subscription_view":
+            view = subscription_view(page)
             view.route = "/"
             page.views.append(apply_bg(view))
 
@@ -263,7 +269,6 @@ def main(page: ft.Page):
                     bgcolor=APP_BG,
                 )
             )
-
 
         page.update()
 
@@ -436,11 +441,11 @@ def main(page: ft.Page):
 
 
     
-ft.app(
-    target=main,
-    view=ft.AppView.WEB_BROWSER,
-    host="0.0.0.0",
-    port=int(os.environ.get("PORT", 8080))
-)
+# ft.app(
+#     target=main,
+#     view=ft.AppView.WEB_BROWSER,
+#     host="0.0.0.0",
+#     port=int(os.environ.get("PORT", 8080))
+# )
 
-# ft.app(target=main)
+ft.app(target=main)

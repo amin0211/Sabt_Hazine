@@ -8,3 +8,5 @@ flet==0.84.0
 requests
 flet-stt
 tzdata
+google-api-python-client
+google-auth

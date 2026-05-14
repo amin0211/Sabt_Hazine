@@ -260,6 +260,15 @@ def build_chat_ui(
                     icon=ft.Icons.LOGOUT_ROUNDED,
                     content=ft.Container(
                         width=150,
+                        content=ft.Text(t(page, "suscription"), color="#DC2626"),
+                    ),
+                    on_click=lambda e: page.app_go("subscription_view"),
+                ),
+
+                ft.PopupMenuItem(
+                    icon=ft.Icons.LOGOUT_ROUNDED,
+                    content=ft.Container(
+                        width=150,
                         content=ft.Text(t(page, "logout"), color="#DC2626"),
                     ),
                     on_click=logout,
