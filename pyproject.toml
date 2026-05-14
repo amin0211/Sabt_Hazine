@@ -1,6 +1,6 @@
 [project]
 name = "costio"
-version = "1.0.7"
+version = "1.0.8"
 description = "Smart expense tracker with shared workspaces and budgeting."
 requires-python = ">=3.10"
 
@@ -26,7 +26,7 @@ dependencies = [
 org = "com.pps"
 product = "Costio"
 permissions = ["microphone"]
-build_number = 7
+build_number = 8
 
 [tool.flet.android.permission]
 "android.permission.RECORD_AUDIO" = true

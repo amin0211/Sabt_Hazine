@@ -71,6 +71,14 @@ def build_chat_ui(
         scroll=ft.ScrollMode.ALWAYS,
     )
 
+    def refresh_after_edit():
+        page.data["sabtehazine_changed"] = True
+        page.data.pop("sabtehazine_view_cache", None)
+
+        load_filtered()
+        refresh_summary()
+        safe_page_update(page)
+
     def ensure_current_workspace():
         page.data = page.data or {}
 
@@ -553,9 +561,24 @@ def build_chat_ui(
         on_submit=send_message,
     )
 
-    start_date = today_local()
-    end_date = today_local()
+    page.data = page.data or {}
 
+    if page.data.get("sabtehazine_start_date"):
+        start_date = datetime.strptime(
+            page.data["sabtehazine_start_date"],
+            "%Y-%m-%d"
+        ).date()
+    else:
+        start_date = today_local()
+
+    if page.data.get("sabtehazine_end_date"):
+        end_date = datetime.strptime(
+            page.data["sabtehazine_end_date"],
+            "%Y-%m-%d"
+        ).date()
+    else:
+        end_date = today_local()
+        
     start_picker = ft.DatePicker(value=start_date)
     end_picker = ft.DatePicker(value=end_date)
 
@@ -625,24 +648,47 @@ def build_chat_ui(
 
         refresh_summary()
         page.update()
-        
+            
     def update_start(e):
         nonlocal start_date
-        start_date = start_picker.value.date()
+
+        picked = start_picker.value
+        if isinstance(picked, datetime):
+            picked = picked.date()
+
+        start_date = picked
         start_picker.value = start_date
 
-        start_btn.content = build_filter_button(f"از: {start_date}", ft.Icons.CALENDAR_MONTH)
+        page.data["sabtehazine_start_date"] = start_date.isoformat()
+
+        start_btn.content = build_filter_button(
+            f"{t(page, 'date_from')}: {start_date}",
+            ft.Icons.CALENDAR_MONTH
+        )
         start_btn.update()
+
         load_filtered()
 
     def update_end(e):
         nonlocal end_date
-        end_date = end_picker.value.date()
+
+        picked = end_picker.value
+        if isinstance(picked, datetime):
+            picked = picked.date()
+
+        end_date = picked
         end_picker.value = end_date
 
-        end_btn.content = build_filter_button(f"تا: {end_date}", ft.Icons.DATE_RANGE)
+        page.data["sabtehazine_end_date"] = end_date.isoformat()
+
+        end_btn.content = build_filter_button(
+            f"{t(page, 'date_to')}: {end_date}",
+            ft.Icons.DATE_RANGE
+        )
         end_btn.update()
+
         load_filtered()
+
 
     start_picker.on_change = update_start
     end_picker.on_change = update_end
@@ -1210,8 +1256,11 @@ def build_chat_ui(
 
                 updated_row["id_hazine"] = updated_data.get("id_hazine")
                 updated_row["category_title"] = updated_data.get("category_title")
+
                 updated_row["member_id"] = updated_data.get("member_id")
-                updated_row["member_name"] = updated_data.get("member_name") or row.get("member_name")
+                updated_row["member_name"] = updated_data.get("member_name", "")
+
+                updated_row["account_id"] = updated_data.get("account_id")
                 updated_row["price"] = updated_data.get("price")
                 updated_row["title"] = updated_data.get("title")
                 updated_row["date_cost"] = updated_data.get("date_cost")
@@ -1238,7 +1287,8 @@ def build_chat_ui(
                                 embedding_vector
                             )
 
-                update_ui(row["id"], updated_row)
+                refresh_after_edit()               
+                # update_ui(row["id"], updated_row)
                 
             open_edit_cost_dialog(
                 page=page,
@@ -1620,11 +1670,15 @@ def build_chat_ui(
 
                 updated_row["id_hazine"] = updated_data.get("id_hazine")
                 updated_row["category_title"] = updated_data.get("category_title")
+
                 updated_row["member_id"] = updated_data.get("member_id")
-                updated_row["member_name"] = updated_data.get("member_name") or edit_row.get("member_name")
+                updated_row["member_name"] = updated_data.get("member_name", "")
+
+                updated_row["account_id"] = updated_data.get("account_id")
                 updated_row["price"] = updated_data.get("price")
                 updated_row["title"] = updated_data.get("title")
                 updated_row["date_cost"] = updated_data.get("date_cost")
+
 
                 if new_category_id and new_category_id != old_category_id:
                     raw_text = edit_row.get("temp_hazine") or edit_row.get("title", "")
@@ -1647,7 +1701,8 @@ def build_chat_ui(
                                 embedding_vector,
                             )
 
-                update_ui(edit_row["id"], updated_row)
+                refresh_after_edit()
+                # update_ui(edit_row["id"], updated_row)
 
             open_edit_cost_dialog(
                 page=page,

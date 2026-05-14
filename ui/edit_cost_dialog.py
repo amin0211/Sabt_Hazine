@@ -380,6 +380,9 @@ def open_edit_cost_dialog(
         dialog.open = False
         page.update()
 
+        # page.data["sabtehazine_start_date"] = page.data.get("sabtehazine_start_date")
+        # page.data["sabtehazine_end_date"] = page.data.get("sabtehazine_end_date")
+
         page.app_go("hazinaha_view")       
     
     
@@ -400,8 +403,8 @@ def open_edit_cost_dialog(
         except:
             return None, "مبلغ نامعتبر است."
 
-        if amount < 0:
-            return None, "مبلغ نمی‌تواند منفی باشد."
+        # if amount < 0:
+        #     return None, "مبلغ نمی‌تواند منفی باشد."
 
         if amount.is_integer():
             amount = int(amount)
@@ -440,8 +443,14 @@ def open_edit_cost_dialog(
             "id_hazine": selected_category["category_id"],
             "category_title": selected_category["category_title"],
             "currency_id": row.get("currency_id"),
-            "member_id": selected_member["member_id"],
-            "account_id": selected_account["account_id"],
+
+            # ✅ مهم
+            "member_id": selected_member.get("member_id"),
+            "member_name": selected_member.get("member_name") or "",
+
+            # ✅ اگر حساب هم می‌خواهی ذخیره شود
+            "account_id": selected_account.get("account_id"),
+
             "old_category_id": original_category_id,
         }
 

@@ -47,6 +47,98 @@ def load_my_costs_by_date(page, start_date, end_date):
     res = q.execute()
     rows = res.data or []
 
+    # ---------- Category map ----------
+    category_ids = list({
+        r.get("id_hazine")
+        for r in rows
+        if r.get("id_hazine")
+    })
+
+    category_map = {}
+
+    if category_ids:
+        cat_res = (
+            supabase.table("hazineha")
+            .select("id,title")
+            .in_("id", category_ids)
+            .execute()
+        )
+
+        category_map = {
+            c["id"]: c.get("title") or ""
+            for c in (cat_res.data or [])
+        }
+
+    # ---------- Member map ----------
+    member_ids = list({
+        r.get("member_id")
+        for r in rows
+        if r.get("member_id")
+    })
+
+    member_map = {}
+
+    if member_ids:
+        member_res = (
+            supabase.table("members")
+            .select("id,full_name")
+            .in_("id", member_ids)
+            .execute()
+        )
+
+        member_map = {
+            m["id"]: m.get("full_name") or ""
+            for m in (member_res.data or [])
+        }
+
+    # ---------- Account map, optional ----------
+    account_ids = list({
+        r.get("account_id")
+        for r in rows
+        if r.get("account_id")
+    })
+
+    account_map = {}
+
+    if account_ids:
+        acc_res = (
+            supabase.table("accounts")
+            .select("id,account_name,account_type")
+            .in_("id", account_ids)
+            .execute()
+        )
+
+        account_map = {
+            a["id"]: a
+            for a in (acc_res.data or [])
+        }
+
+    for r in rows:
+        r["category_title"] = category_map.get(r.get("id_hazine"), "")
+        r["member_name"] = member_map.get(r.get("member_id"), "")
+
+        acc = account_map.get(r.get("account_id")) or {}
+        r["account_name"] = acc.get("account_name", "")
+        r["account_type"] = acc.get("account_type", "")
+
+    return rows
+
+    workspace_id = get_current_workspace_id(page)
+
+    q = (
+        supabase.table("cost")
+        .select("*")
+        .gte("date_cost", start_date)
+        .lte("date_cost", end_date)
+        .order("id", desc=True)
+    )
+
+    if workspace_id:
+        q = q.eq("workspace_id", workspace_id)
+
+    res = q.execute()
+    rows = res.data or []
+
     # ✅ اضافه کردن category_title
     category_ids = list({
         r.get("id_hazine")
