@@ -7,7 +7,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+def normalize_persian_expense_text(text: str) -> str:
+    if not text:
+        return ""
+
+    cleaned = text.strip()
+
+    fixes = {
+        "دالر": "دلار",
+        "دولر": "دلار",
+        "دولار": "دلار",
+        "نهار": "ناهار",
+        "سد": "صد",
+        "سدو": "صد و",
+        "سد و": "صد و",
+        "سوپر مارکت": "سوپرمارکت",
+        "صبحانهه": "صبحانه",
+        "قهوهء": "قهوه",
+        "تومن": "تومان",
+    }
+
+    for wrong, correct in fixes.items():
+        cleaned = cleaned.replace(wrong, correct)
+
+    return cleaned
 
 
 @app.get("/")
@@ -15,7 +43,7 @@ def home():
     return jsonify({
         "ok": True,
         "service": "costio-ios-voice",
-        "message": "iOS voice backend is running"
+        "message": "iOS voice backend is running",
     })
 
 
@@ -23,24 +51,27 @@ def home():
 def health():
     return jsonify({
         "ok": True,
-        "openai_key_set": bool(os.getenv("OPENAI_API_KEY"))
+        "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
     })
 
 
 @app.post("/ios-transcribe")
+@app.post("/ios-transcribe/")
 def ios_transcribe():
     print("IOS_TRANSCRIBE_CALLED", flush=True)
 
     if not os.getenv("OPENAI_API_KEY"):
+        print("OPENAI_API_KEY_MISSING", flush=True)
         return jsonify({
             "ok": False,
-            "error": "OPENAI_API_KEY is missing on server"
+            "error": "OPENAI_API_KEY is missing on server",
         }), 500
 
     if "audio" not in request.files:
+        print("NO_AUDIO_FILE", flush=True)
         return jsonify({
             "ok": False,
-            "error": "No audio file"
+            "error": "No audio file",
         }), 400
 
     audio_file = request.files["audio"]
@@ -65,44 +96,56 @@ def ios_transcribe():
         return jsonify({
             "ok": False,
             "error": "Audio file is empty",
-            "size": size
+            "size": size,
         }), 400
 
     try:
+        prompt = (
+            "این یک صدای فارسی برای ثبت هزینه در اپلیکیشن مدیریت هزینه است. "
+            "گوینده معمولاً یک جمله کوتاه می‌گوید که شامل تاریخ، عنوان هزینه، مبلغ و ارز است. "
+            "متن را فقط به فارسی و خیلی کوتاه بنویس. "
+            "کلمات رایج: امروز، دیروز، پریروز، ناهار، شام، صبحانه، قهوه، چای، خرید، "
+            "مواد غذایی، سوپرمارکت، تاکسی، اسنپ، اتوبوس، بنزین، پارکینگ، اجاره، قبض، "
+            "موبایل، اینترنت، لباس، کفش، دارو، دکتر، مدرسه، دانشگاه، کتاب، رستوران. "
+            "ارزهای رایج: دلار، تومان. "
+            "اگر صدای عدد شنیدی، آن را دقیق به عدد بنویس؛ مثلا صد و بیست و سه را ۱۲۳ بنویس. "
+            "اگر کلمه‌ای شبیه سد شنیدی، احتمالاً منظور صد است. "
+            "اگر دالر، دولر یا دولار شنیدی، منظور دلار است. "
+            "نمونه‌ها: امروز ناهار ۱۲۳ دلار. دیروز تاکسی ۲۵ دلار. امروز قهوه ۶ دلار. "
+            "خرید مواد غذایی ۸۰ دلار. بنزین ۷۰ دلار. قبض اینترنت ۵۰ دلار."
+        )
+
         with open(audio_path, "rb") as f:
             transcription = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f,
                 language="fa",
-                prompt=(
-                    "این یک صدای فارسی برای ثبت هزینه در اپلیکیشن مدیریت هزینه است. "
-                    "متن معمولاً شامل تاریخ، عنوان هزینه، مبلغ و ارز است. "
-                    "مثال‌ها: امروز ناهار ۱۲۳ دلار. دیروز تاکسی ۲۵ دلار. "
-                    "امروز قهوه ۶ دلار. خرید مواد غذایی ۸۰ دلار. "
-                    "کلمات رایج: امروز، دیروز، ناهار، شام، صبحانه، خرید، تاکسی، "
-                    "بنزین، قهوه، مواد غذایی، دلار، تومان. "
-                    "متن را کوتاه، واضح و فارسی بنویس."
-                ),
+                prompt=prompt,
             )
 
-        text = (transcription.text or "").strip()
+        raw_text = (transcription.text or "").strip()
+        text = normalize_persian_expense_text(raw_text)
 
-        print("TRANSCRIBED_TEXT:", text, flush=True)
+        print("TRANSCRIPTION_OBJECT:", transcription, flush=True)
+        print("RAW_TRANSCRIBED_TEXT:", raw_text, flush=True)
+        print("NORMALIZED_TRANSCRIBED_TEXT:", text, flush=True)
         print("TRANSCRIBED_TEXT_REPR:", repr(text), flush=True)
 
         return jsonify({
             "ok": True,
             "text": text,
-            "size": size
+            "raw_text": raw_text,
+            "size": size,
         })
 
     except Exception as e:
         print("TRANSCRIBE_ERROR:", str(e), flush=True)
+
         return jsonify({
             "ok": False,
             "error": str(e),
             "size": size,
-            "debug_path": audio_path
+            "debug_path": audio_path,
         }), 500
 
 
