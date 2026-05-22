@@ -117,10 +117,15 @@ def ios_transcribe():
 
         with open(audio_path, "rb") as f:
             transcription = client.audio.transcriptions.create(
-                model="whisper-1",
+
+                model="gpt-4o-transcribe",
+
                 file=f,
+
                 language="fa",
+
                 prompt=prompt,
+
             )
 
         raw_text = (transcription.text or "").strip()
