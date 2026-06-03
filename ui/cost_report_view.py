@@ -1,19 +1,11 @@
 import flet as ft
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
+from services.utils import today_local, safe_picker_date
 from services.supabase_service import (
     load_my_costs_by_date,
     load_active_hazineha,
     get_descendant_category_ids,
     get_members,
 )
-
-TZ = ZoneInfo("America/Vancouver")
-
-
-def today_local():
-    return datetime.now(TZ).date()
 
 
 def money(v):
@@ -35,9 +27,10 @@ def cost_report_view(page: ft.Page):
     if not isinstance(page.data, dict):
         page.data = {}
 
-    start_date = today_local().replace(day=1)
-    end_date = today_local()
+    today = today_local(page)
 
+    start_date = today.replace(day=1)
+    end_date = today
     selected_category = page.data.get("report_selected_category") or {
         "category_id": None,
         "category_title": "All categories",
@@ -95,16 +88,17 @@ def cost_report_view(page: ft.Page):
     start_btn = ft.GestureDetector()
     end_btn = ft.GestureDetector()
 
+
     def refresh_date_buttons():
         start_btn.content = build_filter_button(
-            f"Fr: {start_date}",
+            f"Fr: {start_date.isoformat()}",
             ft.Icons.CALENDAR_MONTH,
         )
         end_btn.content = build_filter_button(
-            f"To: {end_date}",
+            f"To: {end_date.isoformat()}",
             ft.Icons.DATE_RANGE,
         )
-
+        
     def open_start(e=None):
         start_picker.open = True
         safe_update()
@@ -116,28 +110,24 @@ def cost_report_view(page: ft.Page):
     def update_start(e):
         nonlocal start_date
 
-        picked = start_picker.value
-        if not picked:
+        if not start_picker.value:
             return
 
-        if isinstance(picked, datetime):
-            picked = picked.date()
+        start_date = safe_picker_date(start_picker.value, page)
+        start_picker.value = start_date
 
-        start_date = picked
         refresh_date_buttons()
         refresh()
-
+ 
     def update_end(e):
         nonlocal end_date
 
-        picked = end_picker.value
-        if not picked:
+        if not end_picker.value:
             return
 
-        if isinstance(picked, datetime):
-            picked = picked.date()
+        end_date = safe_picker_date(end_picker.value, page)
+        end_picker.value = end_date
 
-        end_date = picked
         refresh_date_buttons()
         refresh()
 
@@ -597,24 +587,42 @@ def cost_report_view(page: ft.Page):
         safe_update()
 
     # ---------------- Layout ----------------
+    def go_back(e=None):
+        page.data = page.data or {}
 
+        page.data["sabtehazine_changed"] = False
+        page.data["sabtehazine_loaded"] = True
+
+        page.app_go("sabtehazine")
+        
     header = ft.Row(
         [
-            ft.IconButton(
-                icon=ft.Icons.ARROW_BACK_ROUNDED,
-                icon_color=TEXT_MAIN,
-                icon_size=18,
-                width=34,
-                height=34,
-                on_click=lambda e: page.app_go("sabtehazine"),
+            ft.Container(
+                width=56,
+                height=56,
+                alignment=ft.Alignment.CENTER,
+                content=ft.IconButton(
+                    icon=ft.Icons.ARROW_BACK_ROUNDED,
+                    icon_color=TEXT_MAIN,
+                    icon_size=32,
+                    width=56,
+                    height=56,
+                    tooltip="Back",
+                    style=ft.ButtonStyle(
+                        padding=0,
+                    ),
+                    on_click=go_back,
+                ),
             ),
             ft.Text(
                 "Expense Report",
-                size=22,
+                size=18,
                 weight=ft.FontWeight.BOLD,
                 color=TEXT_MAIN,
+                expand=True,
             ),
         ],
+        spacing=4,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
@@ -655,17 +663,26 @@ def cost_report_view(page: ft.Page):
         expand=True,
     )
 
+
     view = ft.View(
         route="/cost_report_view",
         bgcolor=APP_BG,
+        padding=0,
+        spacing=0,
         controls=[
             ft.Container(
                 expand=True,
-                padding=10,
+                padding=ft.padding.only(
+                    left=12,
+                    right=12,
+                    top=30,
+                    bottom=12,
+                ),
                 content=body,
             )
         ],
     )
 
+    
     refresh()
     return view

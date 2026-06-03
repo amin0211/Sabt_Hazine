@@ -1,16 +1,12 @@
 import flet as ft
 import flet_charts as fch
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from services.i18n import t
+from services.utils import today_local, safe_picker_date
 
 from services.supabase_service import load_all_hazineha, load_my_costs_by_date
 import traceback
-from zoneinfo import ZoneInfo
 
-TZ = ZoneInfo("America/Vancouver")
-
-def today_local():
-    return datetime.now(TZ).date()
 
 
 class Node:
@@ -23,6 +19,8 @@ class Node:
 
 
 def GanttChart_view(page: ft.Page, theme):
+    page.data = page.data or {}
+
     APP_BG = theme["APP_BG"]
     PRIMARY = theme["PRIMARY"]
 
@@ -37,7 +35,7 @@ def GanttChart_view(page: ft.Page, theme):
     current_parent_id = {"value": None}
     path_stack = []
 
-    today = today_local()
+    today = today_local(page)
     start_date = today.replace(day=1)
 
     if today.month == 12:
@@ -61,9 +59,12 @@ def GanttChart_view(page: ft.Page, theme):
     start_picker = ft.DatePicker(value=start_date)
     end_picker = ft.DatePicker(value=end_date)
     
-    page.overlay.append(start_picker)
-    page.overlay.append(end_picker)
+    if start_picker not in page.overlay:
+        page.overlay.append(start_picker)
 
+    if end_picker not in page.overlay:
+        page.overlay.append(end_picker)
+        
     def build_filter_button(label, icon):
         return ft.Container(
             border=ft.border.all(1, border_color),
@@ -95,12 +96,18 @@ def GanttChart_view(page: ft.Page, theme):
 
     start_btn = ft.GestureDetector(
         on_tap=open_start,
-        content=build_filter_button(f"{t(page, "date_from")}: {start_date}", ft.Icons.CALENDAR_MONTH),
+        content=build_filter_button(
+            f"{t(page, 'date_from')}: {start_date.isoformat()}",
+            ft.Icons.CALENDAR_MONTH,
+        ),
     )
 
     end_btn = ft.GestureDetector(
         on_tap=open_end,
-        content=build_filter_button(f"{t(page, "date_to")}: {end_date}", ft.Icons.DATE_RANGE),
+        content=build_filter_button(
+            f"{t(page, 'date_to')}: {end_date.isoformat()}",
+            ft.Icons.DATE_RANGE,
+        ),
     )
 
     def go_up(e=None):
@@ -110,13 +117,23 @@ def GanttChart_view(page: ft.Page, theme):
         current_parent_id["value"] = path_stack[-1] if path_stack else None
         render_chart()
 
+    def go_back_main(e=None):
+        # page.data.pop("sabtehazine_view_cache", None)
+        page.data = page.data or {}
+
+        page.data["sabtehazine_changed"] = False
+        page.data["sabtehazine_loaded"] = True
+
+
+        page.app_go("sabtehazine")
+
     back_btn = ft.Container(
         bgcolor=card_bg,
         border=ft.border.all(1, border_color),
         border_radius=14,
         padding=ft.padding.symmetric(horizontal=14, vertical=10),
         ink=True,
-        on_click=lambda e: page.app_go("sabtehazine"),
+        on_click=go_back_main,
         content=ft.Row(
             [
                 ft.Icon(ft.Icons.ARROW_BACK_ROUNDED, size=18, color=text_primary),
@@ -482,31 +499,38 @@ def GanttChart_view(page: ft.Page, theme):
 
     def update_start(e):
         nonlocal start_date
-        if start_picker.value:
-            start_date = start_picker.value.date()
-            start_btn.content = build_filter_button(
-                f"{t(page, "date_from")}: {start_date}",
-                ft.Icons.CALENDAR_MONTH,
-            )
-            start_btn.update()
 
-            # current_parent_id["value"] = None
-            # path_stack.clear()
-            render_chart()
+        if not start_picker.value:
+            return
+
+        start_date = safe_picker_date(start_picker.value, page)
+        start_picker.value = start_date
+
+        start_btn.content = build_filter_button(
+            f"{t(page, 'date_from')}: {start_date.isoformat()}",
+            ft.Icons.CALENDAR_MONTH,
+        )
+
+        start_btn.update()
+        render_chart()
 
     def update_end(e):
         nonlocal end_date
-        if end_picker.value:
-            end_date = end_picker.value.date()
-            end_btn.content = build_filter_button(
-                f"{t(page, "date_to")}: {end_date}",
-                ft.Icons.DATE_RANGE,
-            )
-            end_btn.update()
 
-            # current_parent_id["value"] = None
-            # path_stack.clear()
-            render_chart()
+        if not end_picker.value:
+            return
+
+        end_date = safe_picker_date(end_picker.value, page)
+        end_picker.value = end_date
+
+        end_btn.content = build_filter_button(
+            f"{t(page, 'date_to')}: {end_date.isoformat()}",
+            ft.Icons.DATE_RANGE,
+        )
+
+        end_btn.update()
+        render_chart()    
+
 
     start_picker.on_change = update_start
     end_picker.on_change = update_end
@@ -685,7 +709,7 @@ def GanttChart_view(page: ft.Page, theme):
                 ft.Row(
                     [
                         back_btn,
-                        chart_switcher,
+                        # chart_switcher,
                     ],
                     spacing=14,
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

@@ -1,90 +1,24 @@
-#اگر بخوام از جدول hazineha_template به hazineha برای یه کاربر بخصوص منتقل کنه
-# 
-#  do $$
-# declare
-#     v_user_id uuid := '9fceebe3-e299-4f14-870b-c0cfe2a32ff7';
-# begin
-#     create temporary table temp_hazineha_map (
-#         old_template_id bigint,
-#         new_hazineha_id bigint
-#     ) on commit drop;
-
-#     with inserted as (
-#         insert into hazineha (
-#             user_id,
-#             id_parent,
-#             title,
-#             template_id,
-#             keywords,
-#             embedding_text,
-#             is_active
-#         )
-#         select
-#             v_user_id,
-#             null,
-#             ht.title,
-#             ht.id,
-#             coalesce(ht.keywords, '[]'::jsonb),
-#             coalesce(ht.embedding_text, ''),
-#             coalesce(ht.is_active, true)
-#         from hazineha_template ht
-#         where not exists (
-#             select 1
-#             from hazineha h
-#             where h.user_id = v_user_id
-#               and h.template_id = ht.id
-#         )
-#         returning id, template_id
-#     )
-#     insert into temp_hazineha_map (old_template_id, new_hazineha_id)
-#     select template_id, id
-#     from inserted;
-
-#     update hazineha h
-#     set id_parent = parent_map.new_hazineha_id
-#     from hazineha_template ht
-#     join temp_hazineha_map child_map
-#         on child_map.old_template_id = ht.id
-#     join temp_hazineha_map parent_map
-#         on parent_map.old_template_id = ht.id_parent
-#     where h.id = child_map.new_hazineha_id
-#       and h.user_id = v_user_id;
-
-# end $$;
-
-
-
-
 import flet as ft
-from supabase import create_client
-from dotenv import load_dotenv
-import os
-from datetime import datetime, date
 from services.i18n import t
 import asyncio
-
 from services.supabase_service import (
+    supabase,
     load_all_hazineha, 
     load_leaf_hazineha,
     get_current_user,
+    get_my_profile,
+    get_current_workspace_id,
     _load_all_hazineha_for_workspace,
     _load_active_hazineha_for_workspace, 
     _load_leaf_hazineha_for_workspace,
 )
 
-from zoneinfo import ZoneInfo
+from datetime import date
+from services.utils import today_local, safe_picker_date
 
-TZ = ZoneInfo("America/Vancouver")
 
-def today_local():
-    return datetime.now(TZ).date()
 
-SUPABASE_URL = "https://gisyttrgmhbuxvmsjdfm.supabase.co"
 
-load_dotenv()
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 class Node:
@@ -115,6 +49,20 @@ def hazinaha_view(page: ft.Page):
 
     INDENT = 16
 
+    if not isinstance(page.data, dict):
+        page.data = {}
+
+    try:
+        for ctrl in list(page.overlay):
+            if getattr(ctrl, "key", None) in (
+                "category_nav_cover",
+                "fixed_expense_temp_cover",
+                "bank_reconcile_temp_cover",
+            ):
+                page.overlay.remove(ctrl)
+    except Exception as ex:
+        print("REMOVE_TEMP_COVER_ERROR:", ex, flush=True)
+
     current_user = get_current_user()
     if not current_user:
         return ft.View(
@@ -141,12 +89,15 @@ def hazinaha_view(page: ft.Page):
     if not isinstance(page.data, dict):
         page.data = {}
 
-    from_view = page.data.get("from")
 
+
+    from_view = page.data.get("from")
+        
     picker_mode = (
         page.data.get("category_picker_mode") == True
         and from_view != "sabtehazine"   # 👈 فقط منو رو حذف کن
     )
+
 
     # اگر از منو اومده → picker خاموش
     if from_view == "sabtehazine":
@@ -184,6 +135,12 @@ def hazinaha_view(page: ft.Page):
 
         if page.data.get("from") == "accounts":
             return "accounts"
+        
+        if page.data.get("from") == "fixed_expenses_view":
+            return "fixed_expenses_view"
+
+        if page.data.get("from") == "bank_reconcile_view":
+            return "bank_reconcile_view"
 
         return "sabtehazine"
 
@@ -191,13 +148,11 @@ def hazinaha_view(page: ft.Page):
     def go_back(e):
         from_view = page.data.get("from")
 
-
         if from_view == "edit_cost_dialog":
             page.data["reopen_edit_cost_dialog"] = True
             page.data["sabtehazine_loaded"] = False
             page.data["sabtehazine_changed"] = True
             page.data.pop("sabtehazine_view_cache", None)
-            page.app_go("sabtehazine")
             page.app_go("sabtehazine")
             return
 
@@ -205,6 +160,13 @@ def hazinaha_view(page: ft.Page):
             page.data["reopen_account_filter_dialog"] = True
             page.data["category_picker_mode"] = False
             page.app_go("accounts")
+            return
+
+        if from_view == "fixed_expenses_view":
+            page.data["reopen_fixed_expense_dialog"] = True
+            page.data["category_picker_mode"] = False
+            page.data["without_edit"] = False
+            page.app_go("fixed_expenses_view")
             return
 
         if from_view == "trend_view":
@@ -222,6 +184,13 @@ def hazinaha_view(page: ft.Page):
             page.data.pop("cost_report_view_cache", None)
 
             page.app_go("cost_report_view")
+            return
+
+        if from_view == "bank_reconcile_view":
+            page.data["category_picker_mode"] = False
+            page.data["without_edit"] = False
+            page.data["reopen_bank_reconcile_dialog"] = True
+            page.app_go("bank_reconcile_view")
             return
 
         if from_view == "dashboard_view":
@@ -259,16 +228,27 @@ def hazinaha_view(page: ft.Page):
                 "category_id": selected_node.id,
                 "category_title": selected_node.name,
             })
+            
+        if page.data.get("from") == "fixed_expenses_view":
+            page.data["reopen_fixed_expense_dialog"] = True
+            page.data["category_picker_mode"] = False
+            page.data["without_edit"] = False
+            page.app_go("fixed_expenses_view")
+            return
 
         # 🔥 مهم‌ترین قسمت
         if page.data.get("from") == "edit_cost_dialog":
             page.data["reopen_edit_cost_dialog"] = True
             page.data["sabtehazine_loaded"] = False
             page.data["sabtehazine_changed"] = True
-
-
-
             page.app_go("sabtehazine")
+            return
+
+        if page.data.get("from") == "bank_reconcile_view":
+            page.data["category_picker_mode"] = False
+            page.data["without_edit"] = False
+            page.data["reopen_bank_reconcile_dialog"] = True
+            page.app_go("bank_reconcile_view")
             return
 
         if page.data.get("from") == "accounts":
@@ -284,18 +264,27 @@ def hazinaha_view(page: ft.Page):
         except Exception as e:
             print(f"SAFE UPDATE SKIPPED: {e}")
 
+
     def first_day_of_current_month():
-        today_ = today_local()
+        today_ = today_local(page)
         return date(today_.year, today_.month, 1)
 
     start_date = first_day_of_current_month()
-    end_date = today_local()
+    end_date = today_local(page)
 
-    start_picker = ft.DatePicker(value=start_date)
-    end_picker = ft.DatePicker(value=end_date)
+    start_picker = None
+    end_picker = None
 
-    page.overlay.append(start_picker)
-    page.overlay.append(end_picker)
+    if not picker_mode:
+        start_picker = ft.DatePicker(value=start_date)
+        end_picker = ft.DatePicker(value=end_date)
+
+        if start_picker not in page.overlay:
+            page.overlay.append(start_picker)
+
+        if end_picker not in page.overlay:
+            page.overlay.append(end_picker)
+
 
     def attach_costs(nodes_dict, cost_map):
         for node in nodes_dict.values():
@@ -314,15 +303,22 @@ def hazinaha_view(page: ft.Page):
         return total
 
 
-
     def load_cost_sums_filtered():
-        workspace_id = page.data.get("current_workspace_id")
+        if picker_mode:
+            print("HAZINEHA COST skipped: picker_mode", flush=True)
+            return {}        
+        workspace_id = get_current_workspace_id(page)
+
+        print("HAZINEHA COST workspace_id:", workspace_id, flush=True)
+
+        if not workspace_id:
+            return {}
+
         query = (
             supabase
             .table("cost")
             .select("id_hazine, price, date_cost, member_id")
             .eq("workspace_id", workspace_id)
-            # .eq("user_id", current_user_id)
             .gte("date_cost", start_date.isoformat())
             .lte("date_cost", end_date.isoformat())
         )
@@ -342,18 +338,37 @@ def hazinaha_view(page: ft.Page):
 
         return cost_map
 
-    def refresh_costs_only(update_page=True):
-        cost_map = load_cost_sums_filtered()
-        attach_costs(nodes_dict, cost_map)
 
-        for r in root_nodes:
-            calc_total(r)
+
+    def refresh_costs_only(update_page=True):
+
+        if not picker_mode:
+            try:
+                print("HAZINEHA STEP 2: load_cost_sums_filtered")
+                cost_map = load_cost_sums_filtered()
+            except Exception as ex:
+                print("HAZINEHA load_cost_sums_filtered ERROR:", ex)
+                cost_map = {}
+
+            attach_costs(nodes_dict, cost_map)
+
+            for r in root_nodes:
+                calc_total(r)
+        else:
+            for node in nodes_dict.values():
+                node.direct_cost = 0
+                node.total_cost = 0
 
         rebuild_tree(update_page=update_page)
 
     def load_data_from_db():
-        workspace_id = page.data.get("current_workspace_id")
+        workspace_id = get_current_workspace_id(page)
 
+        print("HAZINEHA workspace_id:", workspace_id, flush=True)
+
+        if not workspace_id:
+            print("HAZINEHA ERROR: no workspace_id", flush=True)
+            return []
 
         response = (
             supabase
@@ -363,8 +378,8 @@ def hazinaha_view(page: ft.Page):
             .order("id")
             .execute()
         )
-        return response.data or []
 
+        return response.data or []
 
     def build_tree_from_db(data):
         if not data:
@@ -396,20 +411,21 @@ def hazinaha_view(page: ft.Page):
         return root_nodes_local, nodes
 
     def update_title(node_id, new_title):
-
+        workspace_id = get_current_workspace_id(page)
 
         (
             supabase
             .table("hazineha")
             .update({"title": new_title})
             .eq("id", node_id)
-            # .eq("workspace_id", workspace_id)
+            .eq("workspace_id", workspace_id)
             .execute()
         )
+
         page.data["hazineha_changed"] = True
 
     def insert_node(title, parent_id):
-        workspace_id = page.data.get("current_workspace_id")
+        workspace_id = get_current_workspace_id(page)
         user = get_current_user()
 
         if not workspace_id:
@@ -439,27 +455,44 @@ def hazinaha_view(page: ft.Page):
         return res.data[0]["id"]
 
 
-    data = load_data_from_db()
 
-    # print("CURRENT USER ID:", current_user_id)
-    # print("HAZINEHA DATA COUNT:", len(data) if data else 0)
-    # print("HAZINEHA DATA:", data[:5] if data else data)
+
+    try:
+        print("HAZINEHA STEP 1: load_data_from_db")
+        data = load_data_from_db()
+        print("HAZINEHA DATA COUNT:", len(data) if data else 0)
+    except Exception as ex:
+        print("HAZINEHA load_data_from_db ERROR:", ex)
+        data = []
 
     root_nodes, nodes_dict = build_tree_from_db(data)
 
-    cost_map = load_cost_sums_filtered()
+    if picker_mode:
+        print("HAZINEHA STEP 2 skipped costs: picker_mode", flush=True)
+        cost_map = {}
+    else:
+        try:
+            print("HAZINEHA STEP 2: load_cost_sums_filtered")
+            cost_map = load_cost_sums_filtered()
+        except Exception as ex:
+            print("HAZINEHA load_cost_sums_filtered ERROR:", ex)
+            cost_map = {}
+
     attach_costs(nodes_dict, cost_map)
 
-    for r in root_nodes:
-        calc_total(r)
-
+    if not picker_mode:
+        for r in root_nodes:
+            calc_total(r)
+            
     search_query = {"value": ""}
     selected_id = {"value": None}
+    row_controls = {}
 
-    tree = ft.Column(
+    tree = ft.ListView(
         spacing=6,
-        scroll=ft.ScrollMode.AUTO,
         expand=True,
+        padding=0,
+        auto_scroll=False,
     )
 
     def node_matches(node, query: str):
@@ -500,6 +533,17 @@ def hazinaha_view(page: ft.Page):
             style=ft.ButtonStyle(padding=0),
         )
 
+    def expand_icon(icon, color, on_click):
+        return ft.IconButton(
+            icon=icon,
+            icon_color=color,
+            icon_size=22,
+            width=38,
+            height=38,
+            on_click=on_click,
+            style=ft.ButtonStyle(padding=0),
+        )
+
     def save_title(node, value):
         value = (value or "").strip()
         if not value:
@@ -528,15 +572,16 @@ def hazinaha_view(page: ft.Page):
 
         def confirm_delete(e=None):
             try:
+                workspace_id = get_current_workspace_id(page)
+
                 res = (
                     supabase
                     .table("hazineha")
                     .delete()
                     .eq("id", child.id)
-                    # .eq("user_id", current_user_id)
+                    .eq("workspace_id", workspace_id)
                     .execute()
                 )
-
 
                 if child in parent.children:
                     parent.children.remove(child)
@@ -570,45 +615,12 @@ def hazinaha_view(page: ft.Page):
             ],
         )
 
-        page.overlay.append(dialog)
+        if dialog not in page.overlay:
+            page.overlay.append(dialog)
+
         dialog.open = True
         page.update()
  
-    def confirm_delete(e):
-        supabase.table("hazineha") \
-            .delete() \
-            .eq("id", child.id) \
-            .execute()
-
-        # 🔥 دوباره کل دیتا رو از دیتابیس بگیر
-        data = load_data_from_db()
-        new_roots, new_nodes = build_tree_from_db(data)
-
-        root_nodes.clear()
-        root_nodes.extend(new_roots)
-
-        nodes_dict.clear()
-        nodes_dict.update(new_nodes)
-
-        dialog.open = False
-
-        page.data["hazineha_changed"] = True
-
-        rebuild_tree()
-        
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("حذف کتگوری"),
-            content=ft.Text(f"'{child.name}' حذف شود؟"),
-            actions=[
-                ft.TextButton("لغو", on_click=lambda e: close_dialog()),
-                ft.TextButton("حذف", on_click=confirm_delete),
-            ],
-        )
-
-        page.dialog = dialog
-        dialog.open = True
-        page.update()        
 
     def start_adding_child(node, e=None):
         if without_edit:
@@ -648,9 +660,23 @@ def hazinaha_view(page: ft.Page):
         # rebuild_tree()
         
     def toggle_expand(node, e=None):
-        node.expanded = not node.expanded
-        selected_id["value"] = node.id
-        rebuild_tree()
+        try:
+            node.expanded = not node.expanded
+            # selected_id["value"] = node.id
+            print(
+                "TOGGLE NODE:",
+                node.id,
+                node.name,
+                "expanded=",
+                node.expanded,
+                "children=",
+                len(node.children),
+                flush=True,
+            )
+            rebuild_tree()
+        except Exception as ex:
+            print("TOGGLE EXPAND ERROR:", repr(ex), flush=True)
+            
 
     def on_search_change(e):
         search_query["value"] = (e.control.value or "").strip().lower()
@@ -661,10 +687,30 @@ def hazinaha_view(page: ft.Page):
         search_field.value = ""
         rebuild_tree()
 
+    def apply_row_style(row_control, node_id):
+        is_selected_row = selected_id["value"] == node_id
+
+        row_control.bgcolor = CARD_SELECTED if is_selected_row else CARD_BG
+        row_control.border = ft.border.all(1, PRIMARY if is_selected_row else BORDER)
+
+
+    def refresh_selected_row_styles():
+        for node_id, row_control in list(row_controls.items()):
+            try:
+                apply_row_style(row_control, node_id)
+                row_control.update()
+            except Exception as ex:
+                print("ROW STYLE UPDATE SKIPPED:", node_id, repr(ex), flush=True)
+
+                
     def select_node(node):
         selected_id["value"] = node.id
-        rebuild_tree()
+        print("ROW SELECTED:", node.id, node.name, flush=True)
 
+        # فقط رنگ ردیف‌های فعلی را عوض کن؛ کل tree را rebuild نکن
+        refresh_selected_row_styles()
+
+        
     def build_display_name(node):
         q = search_query["value"]
 
@@ -708,15 +754,15 @@ def hazinaha_view(page: ft.Page):
     def build_meta_line(node):
         parts = []
 
-        parts.append(
-            ft.Text(
-                f"مبلغ: {node.total_cost:,.2f}",
-                # f"مبلغ: {node.total_cost}",
-                size=10,
-                color=SUCCESS_TEXT,
-                weight=ft.FontWeight.W_600,
+        if not picker_mode:
+            parts.append(
+                ft.Text(
+                    f"{t(page, 'edit_cost_price')}: {node.total_cost:,.2f}",
+                    size=10,
+                    color=SUCCESS_TEXT,
+                    weight=ft.FontWeight.W_600,
+                )
             )
-        )
 
         if node.children:
             parts.append(
@@ -728,7 +774,7 @@ def hazinaha_view(page: ft.Page):
             )
 
         return ft.Row(parts, spacing=8, tight=True)
-
+        
     def build_filtered_tree(item, parent=None, level=0, force_expand=False):
         node = item["node"]
         visible_children = item["children"]
@@ -736,13 +782,13 @@ def hazinaha_view(page: ft.Page):
         is_selected = selected_id["value"] == node.id
 
         if node.children:
-            expand_btn = action_icon(
+            expand_btn = expand_icon(
                 ft.Icons.EXPAND_MORE if should_expand else ft.Icons.CHEVRON_RIGHT,
                 TEXT_MUTED,
                 lambda e, n=node: toggle_expand(n, e)
             )
         else:
-            expand_btn = ft.Container(width=24)
+            expand_btn = ft.Container(width=38)
 
         if node.children:
             type_icon = ft.Icon(
@@ -756,12 +802,69 @@ def hazinaha_view(page: ft.Page):
                 size=13,
                 color="#94A3B8"
             )
+        def open_edit_dialog(node):
+            title_field = ft.TextField(
+                value=node.name,
+                label="نام کتگوری",
+                text_size=13,
+                autofocus=True,
+            )
+
+            def close_dlg(e=None):
+                edit_dialog.open = False
+                safe_update()
+
+            def save_dlg(e=None):
+                new_title = (title_field.value or "").strip()
+
+                if not new_title:
+                    return
+
+                try:
+                    node.name = new_title
+                    update_title(node.id, new_title)
+
+                    page.data["hazineha_changed"] = True
+                    clear_hazineha_cache()
+
+                    edit_dialog.open = False
+                    rebuild_tree()
+
+                except Exception as ex:
+                    print("EDIT CATEGORY ERROR:", repr(ex), flush=True)
+                    edit_dialog.open = False
+                    safe_update()
+
+            edit_dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("ویرایش کتگوری"),
+                content=title_field,
+                actions=[
+                    ft.TextButton("لغو", on_click=close_dlg),
+                    ft.TextButton("ذخیره", on_click=save_dlg),
+                ],
+            )
+
+            if edit_dialog not in page.overlay:
+                page.overlay.append(edit_dialog)
+
+            edit_dialog.open = True
+            safe_update()
+
+        edit_btn = action_icon(
+            ft.Icons.EDIT_OUTLINED,
+            TEXT_MUTED,
+            lambda e, n=node: open_edit_dialog(n)
+        )
 
         add_btn = action_icon(
             ft.Icons.ADD,
             PRIMARY,
             lambda e, n=node: start_adding_child(n, e)
         )
+
+
+
 
         if parent is not None and not node.children:
             delete_btn = action_icon(
@@ -776,15 +879,36 @@ def hazinaha_view(page: ft.Page):
             actions_row = ft.Container(width=0)
         else:
             actions_row = ft.Row(
-                [delete_btn, add_btn],
+                [delete_btn, edit_btn, add_btn],
                 spacing=0,
                 tight=True,
             )
 
-            if not is_selected:
-                actions_row = ft.Container(width=0)
+            # if not is_selected:
+            #     actions_row = ft.Container(width=0)
 
-        if is_selected and not without_edit:
+        # if is_selected and not without_edit:
+        if False:
+            original_value = node.name
+
+            confirm_btn = ft.IconButton(
+                icon=ft.Icons.CHECK,
+                icon_color=SUCCESS_TEXT,
+                icon_size=16,
+                width=34,
+                height=34,
+                visible=False,
+            )
+
+            cancel_btn = ft.IconButton(
+                icon=ft.Icons.CLOSE,
+                icon_color=DANGER,
+                icon_size=16,
+                width=34,
+                height=34,
+                visible=False,
+            )
+
             edit_input = ft.TextField(
                 value=node.name,
                 expand=True,
@@ -794,13 +918,27 @@ def hazinaha_view(page: ft.Page):
                 content_padding=ft.padding.symmetric(horizontal=0, vertical=0),
             )
 
+            def update_edit_buttons(e=None, inp=edit_input):
+                changed = (inp.value or "").strip() != original_value
+
+                confirm_btn.visible = changed
+                cancel_btn.visible = changed
+
+                try:
+                    confirm_btn.update()
+                    cancel_btn.update()
+                except Exception:
+                    pass
+
             def save_edit(e=None, n=node, inp=edit_input):
                 new_value = (inp.value or "").strip()
 
                 if not new_value:
+                    inp.value = original_value
+                    rebuild_tree()
                     return
 
-                if new_value == n.name:
+                if new_value == original_value:
                     rebuild_tree()
                     return
 
@@ -808,49 +946,47 @@ def hazinaha_view(page: ft.Page):
                 update_title(n.id, new_value)
                 rebuild_tree()
 
-            def cancel_edit(e=None):
+            def cancel_edit(e=None, inp=edit_input):
+                inp.value = original_value
                 rebuild_tree()
 
-            edit_input.on_blur = save_edit
+            edit_input.on_change = update_edit_buttons
             edit_input.on_submit = save_edit
+
+            # اگر نمی‌خواهی با خارج شدن از فیلد اتومات ذخیره کند، on_blur را حذف کن
+            # edit_input.on_blur = save_edit
+
+            confirm_btn.on_click = save_edit
+            cancel_btn.on_click = cancel_edit
 
             title_content = ft.Row(
                 controls=[
                     edit_input,
-                    ft.IconButton(
-                        icon=ft.Icons.CHECK,
-                        icon_color=SUCCESS_TEXT,
-                        icon_size=16,
-                        width=34,
-                        height=34,
-                        on_click=save_edit,
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.CLOSE,
-                        icon_color=DANGER,
-                        icon_size=16,
-                        width=34,
-                        height=34,
-                        on_click=cancel_edit,
-                    ),
+                    confirm_btn,
+                    cancel_btn,
                 ],
                 spacing=2,
                 expand=True,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             )
+
         else:
             title_content = build_display_name(node)
-
+            
         row_bg = CARD_SELECTED if is_selected else CARD_BG
         row_border = PRIMARY if is_selected else BORDER
 
         def on_row_hover(e):
             if selected_id["value"] == node.id:
                 e.control.bgcolor = CARD_SELECTED
+                e.control.border = ft.border.all(1, PRIMARY)
             else:
                 e.control.bgcolor = CARD_HOVER if e.data == "true" else CARD_BG
+                e.control.border = ft.border.all(1, BORDER)
+
             e.control.update()
 
+            
         title_block = ft.Column(
             [
                 title_content,
@@ -891,6 +1027,7 @@ def hazinaha_view(page: ft.Page):
                 vertical_alignment=ft.CrossAxisAlignment.START,
             ),
         )
+        row_controls[node.id] = node_row
 
         children_controls = []
 
@@ -1000,62 +1137,95 @@ def hazinaha_view(page: ft.Page):
         )
 
     def rebuild_tree(update_page=True):
-        tree.controls.clear()
-        q = search_query["value"]
+        try:
+            row_controls.clear()
+            new_controls = []
+            q = search_query["value"]
 
-        if q:
-            filtered = filter_tree(root_nodes, q)
+            if q:
+                filtered = filter_tree(root_nodes, q)
 
-            if not filtered:
-                tree.controls.append(
-                    ft.Container(
-                        bgcolor="#FFFFFF",
-                        border=ft.border.all(1, BORDER),
-                        border_radius=14,
-                        padding=20,
-                        content=ft.Column(
-                            [
-                                ft.Icon(ft.Icons.SEARCH_OFF_ROUNDED, size=28, color="#94A3B8"),
-                                ft.Text(
-                                    t(page, "Hazineha_CanNotFind"),
-                                    size=14,
-                                    weight=ft.FontWeight.W_600,
-                                    color=TEXT_MAIN,
-                                ),
-                                # ft.Text(
-                                #     "عبارت جستجو را تغییر بده",
-                                #     size=11,
-                                #     color=TEXT_MUTED,
-                                # ),
-                            ],
-                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                            spacing=6,
-                        ),
-                    )
-                )
-            else:
-                for item in filtered:
-                    tree.controls.append(
-                        build_filtered_tree(
-                            item,
-                            parent=None,
-                            level=0,
-                            force_expand=True,
+                if not filtered:
+                    new_controls.append(
+                        ft.Container(
+                            bgcolor="#FFFFFF",
+                            border=ft.border.all(1, BORDER),
+                            border_radius=14,
+                            padding=20,
+                            content=ft.Column(
+                                [
+                                    ft.Icon(ft.Icons.SEARCH_OFF_ROUNDED, size=28, color="#94A3B8"),
+                                    ft.Text(
+                                        t(page, "Hazineha_CanNotFind"),
+                                        size=14,
+                                        weight=ft.FontWeight.W_600,
+                                        color=TEXT_MAIN,
+                                    ),
+                                ],
+                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                spacing=6,
+                            ),
                         )
                     )
-        else:
-            for root in root_nodes:
-                tree.controls.append(
-                    build_filtered_tree(
-                        build_full(root),
-                        parent=None,
-                        level=0,
-                        force_expand=False,
+                else:
+                    for item in filtered:
+                        new_controls.append(
+                            build_filtered_tree(
+                                item,
+                                parent=None,
+                                level=0,
+                                force_expand=True,
+                            )
+                        )
+            else:
+                for root in root_nodes:
+                    new_controls.append(
+                        build_filtered_tree(
+                            build_full(root),
+                            parent=None,
+                            level=0,
+                            force_expand=False,
+                        )
                     )
-                )
 
-        if update_page:
-            safe_update()
+            tree.controls.clear()
+            tree.controls.extend(new_controls)
+
+            if update_page:
+                safe_update()
+
+        except Exception as ex:
+            print("REBUILD_TREE_ERROR:", repr(ex), flush=True)
+
+            tree.controls.clear()
+            tree.controls.append(
+                ft.Container(
+                    bgcolor="#FFFFFF",
+                    border=ft.border.all(1, BORDER),
+                    border_radius=14,
+                    padding=20,
+                    content=ft.Column(
+                        [
+                            ft.Text(
+                                "Tree rebuild error",
+                                size=14,
+                                weight=ft.FontWeight.BOLD,
+                                color=DANGER,
+                            ),
+                            ft.Text(
+                                str(ex),
+                                size=11,
+                                color=TEXT_MUTED,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                )
+            )
+
+            if update_page:
+                safe_update()
+
 
     back_btn = ft.IconButton(
         icon=ft.Icons.ARROW_BACK_ROUNDED,
@@ -1104,26 +1274,44 @@ def hazinaha_view(page: ft.Page):
 
     #  ---------------------   member ----------------
 
-    member_list_column = ft.Column(
+    member_list_column = ft.ListView(
         spacing=6,
-        scroll=ft.ScrollMode.AUTO,
         expand=True,
+        padding=0,
+        auto_scroll=False,
     )
 
     def load_members():
-        workspace_id = page.data.get("current_workspace_id")
+        workspace_id = get_current_workspace_id(page)
+
+        print("HAZINEHA MEMBERS workspace_id:", workspace_id, flush=True)
+
+        if not workspace_id:
+            return []
+
         res = (
             supabase
             .table("members")
             .select("id, full_name, relation")
             .eq("workspace_id", workspace_id)
-            # .eq("user_id", current_user_id)
             .order("full_name")
             .execute()
         )
+
         return res.data or []
 
-    members_data = load_members()
+
+    if picker_mode:
+        print("HAZINEHA STEP 3 skipped members: picker_mode", flush=True)
+        members_data = []
+    else:
+        try:
+            print("HAZINEHA STEP 3: load_members", flush=True)
+            members_data = load_members()
+            print("HAZINEHA MEMBERS COUNT:", len(members_data) if members_data else 0, flush=True)
+        except Exception as ex:
+            print("HAZINEHA load_members ERROR:", ex, flush=True)
+            members_data = []
 
     def close_member_dialog(e=None):
         member_dialog.open = False
@@ -1247,7 +1435,7 @@ def hazinaha_view(page: ft.Page):
 
     member_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text(" ", size=16, weight=ft.FontWeight.W_700),
+        title=ft.Text(t(page, "Budget_Budget"), size=16, weight=ft.FontWeight.W_700),
         content=ft.Container(
             width=360,
             height=520,
@@ -1265,7 +1453,8 @@ def hazinaha_view(page: ft.Page):
         ],
     )
 
-    page.overlay.append(member_dialog)
+    if member_dialog not in page.overlay:
+        page.overlay.append(member_dialog)
 
     def open_member_dialog(e=None):
         member_search_query["value"] = ""
@@ -1298,38 +1487,57 @@ def hazinaha_view(page: ft.Page):
 
     start_btn = ft.GestureDetector(
         on_tap=open_start,
-        content=build_filter_button(f"{t(page, 'date_from')}: {start_date}", ft.Icons.CALENDAR_MONTH)
+        content=build_filter_button(
+            f"{t(page, 'date_from')}: {start_date.isoformat()}",
+            ft.Icons.CALENDAR_MONTH,
+        ),
     )
 
     end_btn = ft.GestureDetector(
         on_tap=open_end,
-        content=build_filter_button(f"{t(page, 'date_to')}: {end_date}", ft.Icons.DATE_RANGE)
+        content=build_filter_button(
+            f"{t(page, 'date_to')}: {end_date.isoformat()}",
+            ft.Icons.DATE_RANGE,
+        ),
     )
 
     def update_start(e):
         nonlocal start_date
+
         if not start_picker.value:
             return
 
-        start_date = start_picker.value.date()
+        start_date = safe_picker_date(start_picker.value, page)
         start_picker.value = start_date
-        start_btn.content = build_filter_button(f"{t(page, 'date_from')}: {start_date}", ft.Icons.CALENDAR_MONTH)
+
+        start_btn.content = build_filter_button(
+            f"{t(page, 'date_from')}: {start_date.isoformat()}",
+            ft.Icons.CALENDAR_MONTH,
+        )
+
         start_btn.update()
         refresh_costs_only()
 
     def update_end(e):
         nonlocal end_date
+
         if not end_picker.value:
             return
 
-        end_date = end_picker.value.date()
+        end_date = safe_picker_date(end_picker.value, page)
         end_picker.value = end_date
-        end_btn.content = build_filter_button(f"{t(page, 'date_to')}: {end_date}", ft.Icons.DATE_RANGE)
+
+        end_btn.content = build_filter_button(
+            f"{t(page, 'date_to')}: {end_date.isoformat()}",
+            ft.Icons.DATE_RANGE,
+        )
+
         end_btn.update()
         refresh_costs_only()
-
-    start_picker.on_change = update_start
-    end_picker.on_change = update_end
+        
+    if not picker_mode:
+        start_picker.on_change = update_start
+        end_picker.on_change = update_end
 
     search_box = ft.Container(
         bgcolor="#FFFFFF",
@@ -1429,33 +1637,49 @@ def hazinaha_view(page: ft.Page):
         ),
     )
 
+    body_content = ft.Container(
+        expand=True,
+        padding=ft.padding.only(
+            left=10,
+            right=10,
+            top=42,
+            bottom=10 if page.platform != ft.PagePlatform.ANDROID else 4,
+        ),
+        content=ft.Column(
+            [
+                filter_bar,
+                search_box,
+                tree_shell,
+
+                ft.Container(
+                    visible=picker_mode,
+                    padding=ft.padding.only(bottom=12),
+                    content=picker_action_bar,
+                ),
+            ],
+            spacing=10,
+            expand=True,
+        ),
+    )
+
+    if page.platform == ft.PagePlatform.ANDROID:
+        page_body = ft.SafeArea(
+            expand=True,
+            avoid_intrusions_top=False,
+            avoid_intrusions_left=False,
+            avoid_intrusions_right=False,
+            avoid_intrusions_bottom=True,
+            content=body_content,
+        )
+    else:
+        page_body = body_content
+
     return ft.View(
         route="/hazinaha_view",
         bgcolor=APP_BG,
+        padding=0,
+        spacing=0,
         controls=[
-            ft.Container(
-                expand=True,
-                padding=10,
-                content=ft.Column(
-                    [
-                        filter_bar,
-                        search_box,
-                        tree_shell,
-
-                        ft.SafeArea(
-                            visible=picker_mode,
-                            avoid_intrusions_top=False,
-                            avoid_intrusions_left=False,
-                            avoid_intrusions_right=False,
-                            avoid_intrusions_bottom=True,
-                            maintain_bottom_view_padding=True,
-                            minimum_padding=ft.padding.only(bottom=8),
-                            content=picker_action_bar,
-                        ),
-                    ],
-                    spacing=10,
-                    expand=True,
-                ),
-            )
+            page_body
         ],
     )

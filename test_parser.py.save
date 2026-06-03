@@ -1,0 +1,17 @@
+from services.parser_service import parse_expense, extract_price_local
+
+tests = [
+    "ناهار ۲۴۸ دلار و ۴۵ سنت",
+    "ناهار ۲۴۸ دلار و چهل و پنج سنت",
+    "ناهار دویست و چهل و پنج دلار و ۴۵ سنت",
+    "قهوه ۴ دلار و ۷۵ سنت",
+    "ریترن لباس ۵۰ دلار",
+    "حقوق ۲۰۰۰ دلار واریز شد",
+    "تاکسی ۲۵ دلار برای مامان",
+]
+
+for text in tests:
+    print("\nTEXT:", text)
+    print("PRICE:", extract_price_local(text))
+    print("PARSED:", parse_expense(text))
+

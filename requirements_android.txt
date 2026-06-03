@@ -1,0 +1,8 @@
+python-dotenv
+openai
+supabase
+flet-charts==0.84.0
+flet==0.84.0
+requests
+tzdata
+flet-stt==0.1.5

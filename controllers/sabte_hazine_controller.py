@@ -1,7 +1,5 @@
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
 from services.parser_service import parse_expense
+from services.utils import normalize_date, local_date_iso
 from services.supabase_service import (
     insert_cost_for_current_user,
     update_my_cost,
@@ -12,28 +10,7 @@ from services.supabase_service import (
     get_default_account,
 )
 
-tz = ZoneInfo("America/Vancouver")
-# now = datetime.now(tz)
-def now_local():
-    return datetime.now(tz)
 
-def today_local():
-    return now_local().date()
-
-def normalize_date(date_str, text):
-    if date_str:
-        return date_str
-
-    text = (text or "").lower()
-    today = today_local()
-
-    if "yesterday" in text or "دیروز" in text:
-        return (today - timedelta(days=1)).isoformat()
-
-    if "today" in text or "امروز" in text:
-        return today.isoformat()
-
-    return today.isoformat()
 
 def extract_member_id(member_name):
     member_row = find_member_by_name(member_name)
@@ -65,7 +42,7 @@ def extract_account_id(account_name):
     return None
 
 
-def process_expense(text):
+def process_expense(text, page=None):
     data = parse_expense(text) or {
         "title": "text 4",
         "price": None,
@@ -79,37 +56,73 @@ def process_expense(text):
         "title": text,
         "price": data.get("price") or 0,
         "id_hazine": get_hazine_id(data.get("title")),
-        "date_cost": normalize_date(data.get("date"), text),
+        "date_cost": normalize_date(data.get("date"), text, page),
         "temp_hazine": data.get("title"),
         "member_id": extract_member_id(data.get("member_name")),
         "account_id": extract_account_id(data.get("account_name")),
     }
 
-def save_new(data_or_text):
+def save_new(data_or_text, page=None):
     if isinstance(data_or_text, dict):
         text = data_or_text.get("text", "")
+        
+        workspace_id = None
+        root_hazine_id = None
+
+        if page and isinstance(page.data, dict):
+            workspace_id = page.data.get("current_workspace_id")
+            root_hazine_id = page.data.get("root_hazine_id")
+
+        member_id = data_or_text.get("member_id")
+        if not member_id and data_or_text.get("member_name"):
+            member_id = extract_member_id(data_or_text.get("member_name"))
+
+        account_id = data_or_text.get("account_id")
+        if not account_id:
+            account_id = extract_account_id(data_or_text.get("account_name"))
+
+        # ✅ مهم‌ترین قسمت: اگر کتگوری پیدا نشد، root workspace بخورد
+        category_id = data_or_text.get("category_id")
+
+        if not category_id:
+            category_id = root_hazine_id
+
         data = {
             "title": text,
             "price": data_or_text.get("price") or 0,
-            # "currency_id": get_currency_id(data_or_text.get("currency")),
-            "id_hazine": data_or_text.get("category_id"),
-            "date_cost": normalize_date(data_or_text.get("date"), text),
+            "id_hazine": category_id,
+            "date_cost": local_date_iso(page, data_or_text.get("date")),
             "temp_hazine": data_or_text.get("title"),
-            "member_id": extract_member_id(data_or_text.get("member_name")),
-            "account_id": extract_account_id(data_or_text.get("account_name")),
+            "member_id": member_id,
+            "account_id": account_id,
+            "workspace_id": workspace_id,
         }
-        # 999999
-    else:
-        data = process_expense(data_or_text)
 
-    
+        parsed_source = data_or_text
+
+    else:
+        data = process_expense(data_or_text, page)
+        parsed_source = {}
+        member_id = data.get("member_id")
+        account_id = data.get("account_id")
+
+        # ✅ برای حالت متنی قدیمی هم fallback بگذار
+        if not data.get("id_hazine") and page and isinstance(page.data, dict):
+            data["id_hazine"] = page.data.get("root_hazine_id")
+
     inserted = insert_cost_for_current_user(data)
+
     if not inserted:
         return None
 
-    full_row = get_my_cost_by_id(inserted["id"])
-    return full_row or inserted
+    inserted["category_title"] = parsed_source.get("category_title") or ""
+    inserted["member_id"] = member_id
+    inserted["member_name"] = parsed_source.get("member_name") or ""
+    inserted["account_id"] = account_id
+    inserted["account_name"] = parsed_source.get("account_name") or ""
+    inserted["account_type"] = parsed_source.get("account_type") or ""
 
+    return inserted
 
 def edit_cost(cost_id, updated_data):
     return update_my_cost(

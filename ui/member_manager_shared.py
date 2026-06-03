@@ -1,6 +1,7 @@
 import flet as ft
 from services.supabase_service import get_members, add_member, update_member, delete_member
 from services.i18n import t
+import asyncio
 
 def build_member_manager_content(
     page: ft.Page,
@@ -31,7 +32,7 @@ def build_member_manager_content(
         focused_border_color=BORDER_FOCUS,
         content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
         text_size=13,
-        expand=True,
+        # expand=True,
     )
 
     relation_filter = ft.TextField(
@@ -44,14 +45,14 @@ def build_member_manager_content(
         focused_border_color=BORDER_FOCUS,
         content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
         text_size=13,
-        expand=True,
+        # expand=True,
     )
 
-    member_table = ft.Column(
+    member_table = ft.ListView(
         spacing=8,
-        tight=True,
-        scroll=ft.ScrollMode.AUTO,
+        padding=0,
         expand=True,
+        auto_scroll=False,
     )
 
     def safe_update():
@@ -62,8 +63,8 @@ def build_member_manager_content(
 
     def small_action_btn(icon, color, tooltip, on_click):
         return ft.Container(
-            width=26,
-            height=26,
+            width=24,
+            height=24,
             border_radius=8,
             bgcolor="#F8FAFC",
             border=ft.border.all(1, BORDER),
@@ -91,14 +92,14 @@ def build_member_manager_content(
 
     def open_add_member_dialog(ev=None):
         member_name = ft.TextField(
-            label="نام عضو",
+            label=t(page, "Member_LableName"),
             autofocus=True,
             border_radius=14,
             filled=True,
             bgcolor="#FFFFFF",
         )
         member_relation = ft.TextField(
-            label="نسبت",
+            label=t(page, "Member_LableRelation"),
             border_radius=14,
             filled=True,
             bgcolor="#FFFFFF",
@@ -121,7 +122,7 @@ def build_member_manager_content(
             add_error.value = ""
 
             if not (member_name.value or "").strip():
-                add_error.value = "نام عضو را وارد کن."
+                add_error.value = t(page, "Member_Message_Enter_Name")
                 add_error.visible = True
                 safe_update()
                 return
@@ -134,7 +135,7 @@ def build_member_manager_content(
                 if on_member_selected:
                     on_member_selected(new_member)
 
-            refresh_member_table()
+            refresh_member_table(False)
 
             add_dlg.open = False
             safe_update()
@@ -191,7 +192,7 @@ def build_member_manager_content(
             edit_error.value = ""
 
             if not (name_field.value or "").strip():
-                edit_error.value = "نام را وارد کن."
+                edit_error.value = t(page,"Member_Message_Enter_Name")
                 edit_error.visible = True
                 safe_update()
                 return
@@ -208,7 +209,7 @@ def build_member_manager_content(
                     on_member_selected(updated)
 
             edit_dlg.open = False
-            refresh_member_table()
+            refresh_member_table(False)
             safe_update()
 
         edit_dlg.title = ft.Text(t(page, "Member_LableEdit"))
@@ -221,8 +222,8 @@ def build_member_manager_content(
             ),
         )
         edit_dlg.actions = [
-            ft.TextButton(t(page, "Member_Save"), on_click=close_edit),
-            ft.ElevatedButton(t(page, "Member_Cancel"), on_click=save_edit),
+            ft.TextButton(t(page, "Member_Cancel"), on_click=close_edit),
+            ft.ElevatedButton(t(page, "Member_Save"), on_click=save_edit),
         ]
 
         if edit_dlg not in page.overlay:
@@ -255,12 +256,12 @@ def build_member_manager_content(
                     })
 
             delete_dlg.open = False
-            refresh_member_table()
+            refresh_member_table(False)
             safe_update()
 
-        delete_dlg.title = ft.Text("حذف عضو")
+        delete_dlg.title = ft.Text("Delete member")
         delete_dlg.content = ft.Text(
-            f"عضو «{member.get('full_name', '')}» حذف شود؟",
+            f"Delete this member?  «{member.get('full_name', '')}» ",
             color=TEXT_MAIN,
             size=14,
         )
@@ -314,7 +315,7 @@ def build_member_manager_content(
                         ),
                     ),
                     ft.Container(
-                        width=54,
+                        width=72,
                         alignment=ft.Alignment.CENTER_RIGHT,
                         content=ft.Row(
                             [
@@ -343,7 +344,7 @@ def build_member_manager_content(
         )
 
     def refresh_member_table(e=None):
-        members = get_members(page)
+        members = get_members(page) or []
         member_table.controls.clear()
 
         name_q = (name_filter.value or "").strip().lower()
@@ -368,13 +369,10 @@ def build_member_manager_content(
                     border_radius=16,
                     bgcolor="#F8FAFC",
                     border=ft.border.all(1, BORDER),
-                    content=ft.Column(
-                        [
-                            ft.Text("هنوز عضوی ثبت نشده است", color=TEXT_MAIN, weight=ft.FontWeight.W_600),
-                            ft.Text("از دکمه افزودن عضو استفاده کن.", color=TEXT_MUTED, size=12),
-                        ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
+                    content=ft.Text(
+                        t(page, "member_message_No_Member"),
+                        color=TEXT_MAIN,
+                        weight=ft.FontWeight.W_600,
                     ),
                 )
             )
@@ -385,13 +383,10 @@ def build_member_manager_content(
                     border_radius=16,
                     bgcolor="#F8FAFC",
                     border=ft.border.all(1, BORDER),
-                    content=ft.Column(
-                        [
-                            ft.Text("نتیجه‌ای پیدا نشد", color=TEXT_MAIN, weight=ft.FontWeight.W_600),
-                            ft.Text("فیلتر نام یا نسبت را تغییر بده.", color=TEXT_MUTED, size=12),
-                        ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
+                    content=ft.Text(
+                        t(page, "Message_No_results_found"),
+                        color=TEXT_MAIN,
+                        weight=ft.FontWeight.W_600,
                     ),
                 )
             )
@@ -399,123 +394,182 @@ def build_member_manager_content(
             for m in filtered_members:
                 member_table.controls.append(build_row(m))
 
-        safe_update()
+        if e is not False:
+            safe_update()
 
+    async def refresh_member_table_async(do_update=True):
+        try:
+            members = await asyncio.to_thread(get_members, page)
+            members = members or []
+
+            member_table.controls.clear()
+
+            name_q = (name_filter.value or "").strip().lower()
+            relation_q = (relation_filter.value or "").strip().lower()
+
+            filtered_members = []
+
+            for m in members:
+                full_name = (m.get("full_name") or "").strip().lower()
+                relation = (m.get("relation") or "").strip().lower()
+
+                if name_q and name_q not in full_name:
+                    continue
+
+                if relation_q and relation_q not in relation:
+                    continue
+
+                filtered_members.append(m)
+
+            if not members:
+                member_table.controls.append(
+                    ft.Container(
+                        padding=20,
+                        border_radius=16,
+                        bgcolor="#F8FAFC",
+                        border=ft.border.all(1, BORDER),
+                        content=ft.Text(
+                            t(page, "member_message_No_Member"),
+                            color=TEXT_MAIN,
+                            weight=ft.FontWeight.W_600,
+                        ),
+                    )
+                )
+
+            elif not filtered_members:
+                member_table.controls.append(
+                    ft.Container(
+                        padding=20,
+                        border_radius=16,
+                        bgcolor="#F8FAFC",
+                        border=ft.border.all(1, BORDER),
+                        content=ft.Text(
+                            t(page, "Message_No_results_found"),
+                            color=TEXT_MAIN,
+                            weight=ft.FontWeight.W_600,
+                        ),
+                    )
+                )
+
+            else:
+                for m in filtered_members:
+                    member_table.controls.append(build_row(m))
+
+            if do_update:
+                safe_update()
+
+        except Exception as ex:
+            print("REFRESH_MEMBER_TABLE_ASYNC_ERROR:", ex)
+
+
+            
     name_filter.on_change = refresh_member_table
     relation_filter.on_change = refresh_member_table
-    refresh_member_table()
+    # refresh_member_table()
+    member_table.controls.append(
+        ft.Container(
+            padding=20,
+            bgcolor="#F8FAFC",
+            border_radius=16,
+            border=ft.border.all(1, BORDER),
+            content=ft.Text(
+                "در حال بارگذاری...",
+                color=TEXT_MUTED,
+                size=13,
+            ),
+        )
+    )
 
     actions = []
-    if close_handler:
-        actions.append(
-            ft.Container(
-                width=42,
-                height=42,
-                border_radius=14,
-                bgcolor="#F1F5F9",
-                border=ft.border.all(1, "#E2E8F0"),
-                alignment=ft.Alignment.CENTER,
-                ink=True,
-                on_click=lambda e: close_handler(),
-                content=ft.Icon(
-                    ft.Icons.ARROW_BACK_ROUNDED,
-                    size=18,
-                    color="#0F172A",
+ 
+    content_inner = ft.Column(
+        expand=True,
+        spacing=10,
+        controls=[
+
+            ft.ElevatedButton(
+                t(page, "Member_Insert"),
+                icon=ft.Icons.PERSON_ADD_ALT_1_ROUNDED,
+                on_click=open_add_member_dialog,
+                style=ft.ButtonStyle(
+                    bgcolor=PRIMARY,
+                    color="#FFFFFF",
+                    shape=ft.RoundedRectangleBorder(radius=12),
+                    padding=ft.padding.symmetric(horizontal=16, vertical=12),
                 ),
-            )
+            ),
+
+            ft.Row(
+                controls=[
+                    ft.Container(
+                        width=150,
+                        content=ft.Column(
+                            controls=[
+                                ft.Text(
+                                    t(page, "Member_LableName"),
+                                    size=10,
+                                    color=TEXT_MUTED,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                                name_filter,
+                            ],
+                            spacing=6,
+                            tight=True,
+                        ),
+                    ),
+                    ft.Container(
+                        expand=True,
+                        content=ft.Column(
+                            controls=[
+                                ft.Text(
+                                    t(page, "Member_LableRelation"),
+                                    size=10,
+                                    color=TEXT_MUTED,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                                relation_filter,
+                            ],
+                            spacing=6,
+                            tight=True,
+                        ),
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+
+            ft.Container(
+                expand=True,
+                bgcolor="#FFFFFF",
+                border_radius=12,
+                content=member_table,
+            ),
+        ],
+    )
+
+    if picker_mode:
+        content = ft.Container(
+            width=620,
+            height=470,
+            padding=12,
+            content=content_inner,
+        )
+    else:
+        content = ft.Container(
+            expand=True,
+            bgcolor="#FFFFFF",
+            border_radius=24,
+            padding=16,
+            content=content_inner,
         )
 
-    content = ft.Container(
-        width=620,
-        height=470,
-        content=ft.Column(
-            [
-                ft.Row(
-                    [
-                        # دکمه برگشت (آیکونی)
-                        *(
-                            [
-                                ft.Container(
-                                    width=42,
-                                    height=42,
-                                    border_radius=14,
-                                    bgcolor="#F1F5F9",
-                                    border=ft.border.all(1, "#E2E8F0"),
-                                    alignment=ft.Alignment.CENTER,
-                                    ink=True,
-                                    on_click=lambda e: close_handler(),
-                                    content=ft.Icon(
-                                        ft.Icons.ARROW_BACK_ROUNDED,
-                                        size=18,
-                                        color="#0F172A",
-                                    ),
-                                )
-                            ] if close_handler else []
-                        ),
-
-                        # دکمه افزودن عضو
-                        ft.ElevatedButton(
-                            t(page, "Member_Insert"),
-                            icon=ft.Icons.PERSON_ADD_ALT_1_ROUNDED,
-                            on_click=open_add_member_dialog,
-                            style=ft.ButtonStyle(
-                                bgcolor=PRIMARY,
-                                color="#FFFFFF",
-                                shape=ft.RoundedRectangleBorder(radius=12),
-                                padding=ft.padding.symmetric(horizontal=16, vertical=12),
-                            ),
-                        ),
-                    ],
-                    spacing=10,
-                    alignment=ft.MainAxisAlignment.START,
-                ),
-                
-                ft.Divider(height=4, color="transparent"),
-                ft.Row(
-                    [
-                        ft.Container(
-                            width=150,
-                            content=ft.Column(
-                                [
-                                    ft.Text("نام", size=10, color=TEXT_MUTED, weight=ft.FontWeight.W_600),
-                                    name_filter,
-                                ],
-                                spacing=6,
-                                tight=True,
-                            ),
-                        ),
-                        ft.Container(
-                            expand=True,
-                            content=ft.Column(
-                                [
-                                    ft.Text(t(page, "Member_LableRelation"), size=10, color=TEXT_MUTED, weight=ft.FontWeight.W_600),
-                                    relation_filter,
-                                ],
-                                spacing=6,
-                                tight=True,
-                            ),
-                        ),
-                        ft.Container(width=54),
-                    ],
-                    spacing=8,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
-                ),
-                ft.Container(
-                    expand=True,
-                    content=member_table,
-                ),
-            ],
-            spacing=10,
-            expand=True,
-        ),
-    )
 
     return {
         "content": content,
         "actions": actions,
         "refresh": refresh_member_table,
+        "refresh_async": refresh_member_table_async,
     }
-
 
 def open_member_picker_dialog(
     page: ft.Page,
@@ -545,8 +599,6 @@ def open_member_picker_dialog(
     )
 
     dlg.content = shared["content"]
-    dlg.actions = shared["actions"]
-    dlg.actions_alignment = ft.MainAxisAlignment.END
 
     if dlg not in page.overlay:
         page.overlay.append(dlg)

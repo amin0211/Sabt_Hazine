@@ -3,18 +3,12 @@ import os
 import json
 from dotenv import load_dotenv
 from functools import lru_cache
-from datetime import datetime, date, timedelta
 import calendar
 from collections import defaultdict
-from zoneinfo import ZoneInfo
+from datetime import datetime, date, timedelta, timezone
+from services.utils import today_local, safe_picker_date
 
-TZ = ZoneInfo("America/Vancouver")
 
-def now_local():
-    return datetime.now(TZ)
-
-def today_local():
-    return now_local().date()
 
 load_dotenv()
 
@@ -35,7 +29,7 @@ def load_my_costs_by_date(page, start_date, end_date):
 
     q = (
         supabase.table("cost")
-        .select("*")
+        .select("id,title,price,date_cost,id_hazine,member_id,account_id,temp_hazine")
         .gte("date_cost", start_date)
         .lte("date_cost", end_date)
         .order("id", desc=True)
@@ -210,18 +204,30 @@ def create_workspace(title, is_active=True, description=None):
     workspace = res.data[0]
     workspace_id = workspace["id"]
 
-    # ✅ ساخت root category
+    root_hazine_id = None
+
     try:
-        supabase.table("hazineha").insert({
+        root_res = supabase.table("hazineha").insert({
             "user_id": user.id,
             "workspace_id": workspace_id,
-            "title": title,          # همون اسم workspace
-            "id_parent": None,       # root
+            "title": title,
+            "id_parent": None,
             "keywords": [],
             "embedding_text": "",
             "is_active": True,
             "template_id": None,
         }).execute()
+
+        root_row = root_res.data[0] if root_res.data else None
+        root_hazine_id = root_row.get("id") if root_row else None
+
+        if root_hazine_id:
+            supabase.table("workspaces").update({
+                "root_hazine_id": root_hazine_id
+            }).eq("id", workspace_id).execute()
+
+            workspace["root_hazine_id"] = root_hazine_id
+
     except Exception as ex:
         print("create root hazineha error:", ex)
 
@@ -229,85 +235,114 @@ def create_workspace(title, is_active=True, description=None):
 
     return workspace
 
+
 def get_my_workspaces():
     user = get_current_user()
+
+    print("========== GET MY WORKSPACES DEBUG ==========", flush=True)
+    print("[WORKSPACES] current user:", user.id if user else None, flush=True)
+
     if not user:
+        print("[WORKSPACES] ERROR: no authenticated user", flush=True)
+        print("============================================", flush=True)
         return []
 
     user_id = user.id
 
-    # 1) workspace هایی که خود کاربر owner است
-    owned_res = (
-        supabase.table("workspaces")
-        .select("id, title, owner_user_id, is_active")
-        .eq("owner_user_id", user_id)
-        .eq("is_active", True)
-        .execute()
-    )
-
-    owned = owned_res.data or []
-
-    for w in owned:
-        w["access_type"] = "owner"
-        w["shared_by_name"] = None
-        w["shared_by_email"] = None
-
-    # 2) workspace هایی که با کاربر share شده
-    shared_res = (
-        supabase.table("workspace_members")
-        .select("""
-            workspace_id,
-            role,
-            invited_by,
-            workspaces:workspace_id (
-                id,
-                title,
-                owner_user_id,
-                is_active
-            ),
-            inviter:invited_by (
-                id,
-                email,
-                name,
-                family
-            )
-        """)
-        .eq("user_id", user_id)
-        .eq("is_active", True)
-        .execute()
-    )
-
-    shared_rows = shared_res.data or []
+    owned = []
     shared = []
 
-    for row in shared_rows:
-        workspace = row.get("workspaces")
-        inviter = row.get("inviter") or {}
-
-        if not workspace:
-            continue
-
-        if workspace.get("is_active") is not True:
-            continue
-
-        inviter_name = (
-            f"{inviter.get('name') or ''} {inviter.get('family') or ''}".strip()
-            # or inviter.get("username")
-            or inviter.get("email")
-            or "Unknown"
+    # 1) Workspace هایی که خود کاربر owner است
+    try:
+        owned_res = (
+            supabase.table("workspaces")
+            .select("id, title, owner_user_id, is_active, root_hazine_id")
+            .eq("owner_user_id", user_id)
+            .eq("is_active", True)
+            .execute()
         )
 
-        shared.append({
-            "id": workspace.get("id"),
-            "title": workspace.get("title"),
-            "owner_user_id": workspace.get("owner_user_id"),
-            "access_type": "shared",
-            "role": row.get("role"),
-            "shared_by_name": inviter_name,
-            "shared_by_email": inviter.get("email"),
-        })
+        owned = owned_res.data or []
 
-    return owned + shared
+        print("[WORKSPACES] owned count:", len(owned), flush=True)
+        print("[WORKSPACES] owned rows:", owned, flush=True)
+
+        for w in owned:
+            w["access_type"] = "owner"
+            w["shared_by_name"] = None
+            w["shared_by_email"] = None
+            w["shared_count"] = 0
+
+    except Exception as ex:
+        print("[WORKSPACES] owned query error:", repr(ex), flush=True)
+        owned = []
+
+    # 2) Workspace هایی که با کاربر share شده
+    # بدون join با profiles، چون RLS روی profiles ممکن است join را خالی کند
+    try:
+        shared_res = (
+            supabase.table("workspace_members")
+            .select("workspace_id, role, invited_by")
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+
+        shared_rows = shared_res.data or []
+
+        print("[WORKSPACES] shared membership count:", len(shared_rows), flush=True)
+        print("[WORKSPACES] shared membership rows:", shared_rows, flush=True)
+
+        for row in shared_rows:
+            workspace_id = row.get("workspace_id")
+
+            if not workspace_id:
+                continue
+
+            try:
+                workspace_res = (
+                    supabase.table("workspaces")
+                    .select("id, title, owner_user_id, is_active, root_hazine_id")
+                    .eq("id", workspace_id)
+                    .eq("is_active", True)
+                    .limit(1)
+                    .execute()
+                )
+
+                workspace_rows = workspace_res.data or []
+
+                if not workspace_rows:
+                    continue
+
+                workspace = workspace_rows[0]
+
+                shared.append({
+                    "id": workspace.get("id"),
+                    "title": workspace.get("title"),
+                    "owner_user_id": workspace.get("owner_user_id"),
+                    "root_hazine_id": workspace.get("root_hazine_id"),
+                    "is_active": workspace.get("is_active", True),
+                    "access_type": "shared",
+                    "role": row.get("role"),
+                    "shared_by_name": "Shared workspace",
+                    "shared_by_email": None,
+                    "shared_count": 0,
+                })
+
+            except Exception as ex:
+                print("[WORKSPACES] shared workspace read error:", repr(ex), flush=True)
+
+    except Exception as ex:
+        print("[WORKSPACES] shared query error:", repr(ex), flush=True)
+        shared = []
+
+    result = owned + shared
+
+    print("[WORKSPACES] total result count:", len(result), flush=True)
+    print("[WORKSPACES] total result:", result, flush=True)
+    print("============================================", flush=True)
+
+    return result
 
 
 def update_workspace(workspace_id, title, is_active=True):
@@ -503,7 +538,6 @@ def get_languages():
     res = supabase.table("languages").select("*").order("id").execute()
     return res.data or []
 
-
 def get_my_profile_with_language():
     user = supabase.auth.get_user()
     if not user or not user.user:
@@ -511,29 +545,39 @@ def get_my_profile_with_language():
 
     user_id = user.user.id
 
-    res = (
-        supabase.table("profiles")
-        .select("id, name, family, birthdate, language_id, languages(code, name, is_rtl)")
-        .eq("id", user_id)
-        .single()
-        .execute()
-    )
+    try:
+        res = (
+            supabase.table("profiles")
+            .select("""
+                id,
+                name,
+                family,
+                birthdate,
+                language_id,
+                timezone,
+                current_workspace_id,
+                is_active,
+                status,
+                deleted_at,
+                deletion_requested_at,
+                languages(code, name, is_rtl),
+                workspaces:current_workspace_id (
+                    id,
+                    title,
+                    root_hazine_id
+                )
+            """)
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
 
-    return res.data if res.data else None
+        return res.data if res and res.data else None
 
-def update_my_profile(data: dict):
-    user = get_current_user()
-    if not user:
+    except Exception as ex:
+        print("GET MY PROFILE WITH LANGUAGE ERROR:", ex)
         return None
-
-    res = (
-        supabase.table("profiles")
-        .update(data)
-        .eq("id", user.id)
-        .execute()
-    )
-
-    return res.data[0] if res.data else None
+    
 
 def get_my_profile():
     user = supabase.auth.get_user()
@@ -542,9 +586,21 @@ def get_my_profile():
 
     user_id = user.user.id
 
-    res = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-    return res.data if res.data else None
+    try:
+        res = (
+            supabase.table("profiles")
+            .select("*")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
 
+        return res.data if res and res.data else None
+
+    except Exception as ex:
+        print("GET MY PROFILE ERROR:", ex)
+        return None
+        
 def update_my_profile(data: dict):
     user = supabase.auth.get_user()
     if not user or not user.user:
@@ -552,7 +608,17 @@ def update_my_profile(data: dict):
 
     user_id = user.user.id
 
-    res = supabase.table("profiles").update(data).eq("id", user_id).execute()
+    payload = dict(data or {})
+
+
+    res = (
+        supabase
+        .table("profiles")
+        .update(payload)
+        .eq("id", user_id)
+        .execute()
+    )
+
     return res.data
 
 def update_user_password(new_password: str):
@@ -565,8 +631,11 @@ def update_user_password(new_password: str):
 
     return res
 
-def get_opening_balance_total():
-    workspace_id = get_current_workspace_id()
+def get_opening_balance_total(page=None):
+    workspace_id = get_current_workspace_id(page)
+
+    if not workspace_id:
+        return 0
 
     rows = (
         supabase.table("accounts")
@@ -586,9 +655,6 @@ def get_account_balances():
 
 def get_account_transactions(account_id):
     workspace_id = get_current_workspace_id()
-    # user = get_current_user()
-    # if not user:
-    #     return []
 
     rows = []
 
@@ -613,7 +679,7 @@ def get_account_transactions(account_id):
 
     costs = (
         supabase.table("cost")
-        .select("id,title,price,date_cost,id_hazine,member_id")
+        .select("id,title,price,date_cost,id_hazine,member_id,created_at")
         .eq("workspace_id", workspace_id)
         .eq("account_id", account_id)
         .execute()
@@ -623,6 +689,7 @@ def get_account_transactions(account_id):
     for c in costs:
         rows.append({
             "date": c.get("date_cost"),
+            "created_at": c.get("created_at"),
             "title": c.get("title") or "Expense",
             "amount": -float(c.get("price") or 0),
             "type": "expense",
@@ -634,7 +701,7 @@ def get_account_transactions(account_id):
 
     incomes = (
         supabase.table("income_transactions")
-        .select("id,title,amount,transaction_date,status")
+        .select("id,title,amount,transaction_date,status,created_at")
         .eq("workspace_id", workspace_id)
         .eq("account_id", account_id)
         .eq("is_active", True)
@@ -645,6 +712,7 @@ def get_account_transactions(account_id):
     for i in incomes:
         rows.append({
             "date": i.get("transaction_date"),
+            "created_at": i.get("created_at"),
             "title": i.get("title") or "Income",
             "amount": float(i.get("amount") or 0),
             "type": "income",
@@ -656,7 +724,7 @@ def get_account_transactions(account_id):
 
     transfers_out = (
         supabase.table("transfer_transactions")
-        .select("id,amount,transfer_date,note")
+        .select("id,amount,transfer_date,note,created_at")
         .eq("workspace_id", workspace_id)
         .eq("from_account_id", account_id)
         .execute()
@@ -666,18 +734,19 @@ def get_account_transactions(account_id):
     for t in transfers_out:
         rows.append({
             "date": t.get("transfer_date"),
+            "created_at": t.get("created_at"),
             "title": t.get("note") or "Transfer Out",
             "amount": -float(t.get("amount") or 0),
             "type": "transfer_out",
             "category_id": None,
-            "category_title": "",
+            "category_title": "Transfer",
             "member_id": None,
             "member_name": "",
         })
 
     transfers_in = (
         supabase.table("transfer_transactions")
-        .select("id,amount,transfer_date,note")
+        .select("id,amount,transfer_date,note,created_at")
         .eq("workspace_id", workspace_id)
         .eq("to_account_id", account_id)
         .execute()
@@ -687,16 +756,24 @@ def get_account_transactions(account_id):
     for t in transfers_in:
         rows.append({
             "date": t.get("transfer_date"),
+            "created_at": t.get("created_at"),
             "title": t.get("note") or "Transfer In",
             "amount": float(t.get("amount") or 0),
             "type": "transfer_in",
             "category_id": None,
-            "category_title": "",
+            "category_title": "Transfer",
             "member_id": None,
             "member_name": "",
         })
 
-    rows.sort(key=lambda x: x.get("date") or "", reverse=True)
+    rows.sort(
+        key=lambda x: (
+            x.get("date") or "",
+            x.get("created_at") or "",
+        ),
+        reverse=True,
+    )
+
     return rows
 
 
@@ -889,10 +966,14 @@ def _vector_to_sql(vector):
 
 
 def clear_hazineha_cache():
-    _load_all_hazineha_for_workspace.cache_clear()
-    _load_active_hazineha_for_workspace.cache_clear()
-    load_leaf_hazineha.cache_clear()
-
+    for fn in [
+        _load_all_hazineha_for_workspace,
+        _load_active_hazineha_for_workspace,
+        _load_leaf_hazineha_for_workspace,
+    ]:
+        if hasattr(fn, "cache_clear"):
+            fn.cache_clear()
+            
 # ================= AUTH =================
 def sign_up_user(email: str, password: str):
     return supabase.auth.sign_up({
@@ -978,84 +1059,51 @@ def get_profile(user_id: str):
 #         print(f"get_profile_by_username error: {e}")
 #         return []
 
-
 def update_profile(user_id: str, data: dict):
-    try:
-        result = (
-            supabase.table("profiles")
-            .update(data)
-            .eq("id", user_id)
-            .execute()
-        )
-        return result.data
-    except Exception as e:
-        print(f"update_profile error: {e}")
-        return None
+    if not user_id:
+        raise Exception("user_id is required")
+
+    payload = dict(data or {})
+
+
+
+    result = (
+        supabase
+        .table("profiles")
+        .update(payload)
+        .eq("id", user_id)
+        .execute()
+    )
+
+    if not result.data:
+        raise Exception("Profile update failed. No profile row was updated.")
+
+    return result.data
+
+
 
 def refresh_hazineha_titles_for_user(workspace_id: str, language_id: int):
     try:
-        # همه دسته‌بندی‌های کاربر که از template آمده‌اند
-        hazine_rows = (
-            supabase.table("hazineha")
-            .select("id,template_id")
-            .eq("workspace_id", workspace_id)
-            .execute()
-            .data
-        ) or []
+        if not workspace_id:
+            raise ValueError("workspace_id is required")
 
-        if not hazine_rows:
-            return True
+        if not language_id:
+            raise ValueError("language_id is required")
 
-        template_ids = [row["template_id"] for row in hazine_rows if row.get("template_id")]
-        if not template_ids:
-            return True
-
-        # title اصلی template برای fallback
-        template_rows = (
-            supabase.table("hazineha_template")
-            .select("id,title")
-            .in_("id", template_ids)
-            .execute()
-            .data
-        ) or []
-
-        template_map = {row["id"]: row.get("title") or "" for row in template_rows}
-
-        # ترجمه‌های زبان جدید
-        dic_rows = (
-            supabase.table("hazineha_dic")
-            .select("hazine_id,title")
-            .eq("language_id", language_id)
-            .in_("hazine_id", template_ids)
-            .execute()
-            .data
-        ) or []
-
-        dic_map = {row["hazine_id"]: row.get("title") or "" for row in dic_rows}
-
-        # آپدیت رکوردها
-        for row in hazine_rows:
-            template_id = row.get("template_id")
-            if not template_id:
-                continue
-
-            new_title = dic_map.get(template_id) or template_map.get(template_id) or ""
-
-            (
-                supabase.table("hazineha")
-                .update({"title": new_title})
-                .eq("id", row["id"])
-                # .eq("user_id", user_id)
-                .execute()
-            )
+        res = supabase.rpc(
+            "refresh_hazineha_titles_for_workspace",
+            {
+                "p_workspace_id": workspace_id,
+                "p_language_id": int(language_id),
+            }
+        ).execute()
 
         clear_hazineha_cache()
-        return True
+        return res.data if res.data is not None else True
 
     except Exception as e:
         print(f"refresh_hazineha_titles_for_user error: {e}")
         raise
-
 
 def delete_auth_user(user_id):
     if not user_id:
@@ -1064,20 +1112,45 @@ def delete_auth_user(user_id):
     supabase_admin.auth.admin.delete_user(user_id)
 
 
+def get_user_language_code(user_id):
+    rows = (
+        supabase.table("profiles")
+        .select("language_id, languages(code)")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+        .data
+    ) or []
+
+    if not rows:
+        return "fa"
+
+    lang = rows[0].get("languages") or {}
+    return lang.get("code") or "fa"
+
+
 def create_default_account_for_user(user_id: str, workspace_id: str):
     workspace_id = workspace_id or get_current_workspace_id()
+
+    lang_code = get_user_language_code(user_id)
+
+    if lang_code == "en":
+        account_name = "Main Account"
+    elif lang_code == "fa":
+        account_name = "حساب اصلی"
 
     data = {
         "user_id": user_id,
         "workspace_id": workspace_id,
         "account_type": "bank",
-        "account_name": "حساب اصلی",
+        "account_name": account_name,
         "initial_balance": 0,
         "is_default": True,
         "is_active": True,
     }
 
     return supabase.table("accounts").insert(data).execute()
+
 
 def create_default_workspace_for_user(user_id):
     if not user_id:
@@ -1095,23 +1168,26 @@ def create_default_workspace_for_user(user_id):
 
     return res.data
 
-def copy_hazineha_template_for_user(user_id, workspace_id):
+def copy_hazineha_template_for_user(user_id, workspace_id, language_id):
     if not user_id:
         raise ValueError("user_id is required")
 
     if not workspace_id:
         raise ValueError("workspace_id is required")
 
+    if not language_id:
+        raise ValueError("language_id is required")
+
     res = supabase.rpc(
         "copy_hazineha_template_for_user",
         {
             "p_user_id": user_id,
             "p_workspace_id": workspace_id,
+            "p_language_id": int(language_id),
         }
     ).execute()
 
     return res.data
-
 # ================= HAZINEHA / CATEGORY =================
 @lru_cache(maxsize=256)
 def _load_all_hazineha_for_workspace(workspace_id: str):
@@ -1610,13 +1686,12 @@ def load_all_costs():
     return supabase.table("cost").select("*").execute().data
 
 
-def load_my_costs(workspace_id):
-    return supabase.table("cost") \
-        .select("*") \
-        .eq("workspace_id", workspace_id) \
-        .execute()
-    
-    workspace_id = get_current_workspace_id()
+def load_my_costs(workspace_id=None):
+    workspace_id = workspace_id or get_current_workspace_id()
+
+    if not workspace_id:
+        return []
+
     return (
         supabase.table("cost")
         .select("*")
@@ -1625,7 +1700,6 @@ def load_my_costs(workspace_id):
         .execute()
         .data
     ) or []
-
 
 def get_cost_by_id(cost_id):
     try:
@@ -2019,16 +2093,26 @@ def update_account(account_id, account_type, account_name, initial_balance,# cur
     return res.data[0] if res.data else None
 
 def delete_account(account_id):
-    user = get_current_user()
-    if not user:
-        raise Exception("User is not logged in")
+    if not account_id:
+        raise Exception("account_id is required")
 
-    supabase.table("accounts") \
-        .update({"is_active": False}) \
-        .eq("id", account_id) \
-        .eq("workspace_id", workspace_id) \
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    res = (
+        supabase.table("accounts")
+        .update({"is_active": False})
+        .eq("id", account_id)
+        .eq("workspace_id", workspace_id)
         .execute()
-    
+    )
+
+    if not res.data:
+        raise Exception("Account was not deleted. No row was updated.")
+
+    return res.data[0]
+
 def generate_account_keywords(account_type, account_name):
     base = {
         "bank": ["bank", "card", "debit", "atm"],
@@ -2152,27 +2236,23 @@ def update_transaction(
 
 # ================= INCOME TRANSACTIONS =================
 
-def get_income_transactions_by_month(year_month, workspace_id=None):
-    # user = get_current_user()
-    # if not user:
-    #     return []
+def get_income_transactions_by_month(year_month, workspace_id=None, page=None):
+    if not workspace_id:
+        workspace_id = get_current_workspace_id(page)
 
     if not workspace_id:
-        profile = get_my_profile()
-        workspace_id = profile.get("current_workspace_id") if profile else None
+        return []
 
-    q = (
+    res = (
         supabase.table("income_transactions")
         .select("*")
         .eq("workspace_id", workspace_id)
         .eq("year_month", year_month)
         .eq("is_active", True)
+        .order("id", desc=True)
+        .execute()
     )
 
-    if workspace_id:
-        q = q.eq("workspace_id", workspace_id)
-
-    res = q.execute()
     return res.data or []
 def create_income_transaction(
     title,
@@ -2261,27 +2341,20 @@ def delete_income_transaction(tx_id):
 
 
 # --------------transaction------------
-def get_financial_summary(start_date, end_date, workspace_id=None):
-    # user = get_current_user()
-    # if not user:
-    #     return {"expense": 0}
-    workspace_id = get_current_workspace_id()
+def get_financial_summary(start_date, end_date, workspace_id=None, page=None):
+    if not workspace_id:
+        workspace_id = get_current_workspace_id(page)
 
     if not workspace_id:
-        profile = get_my_profile()
-        workspace_id = profile.get("current_workspace_id") if profile else None
+        return {"expense": 0}
 
     q = (
         supabase.table("cost")
         .select("price")
         .eq("workspace_id", workspace_id)
-        # .eq("user_id", user.id)
         .gte("date_cost", start_date)
         .lte("date_cost", end_date)
     )
-
-    if workspace_id:
-        q = q.eq("workspace_id", workspace_id)
 
     res = q.execute()
 
@@ -2289,14 +2362,14 @@ def get_financial_summary(start_date, end_date, workspace_id=None):
 
     return {"expense": expense}
 
-def carry_monthly_income_to_current_month():
+def carry_monthly_income_to_current_month(page=None):
     user = get_current_user()
     if not user:
         raise Exception("User is not logged in")
 
-    workspace_id = get_current_workspace_id()
+    workspace_id = get_current_workspace_id(page)
 
-    today = today_local()
+    today = today_local(page)
     current_ym = today.strftime("%Y-%m")
     today_iso = today.isoformat()
 
@@ -2390,7 +2463,7 @@ def get_budgets_by_month(year_month: str):
     return res.data or []
 
 
-def get_budget_page_data(year_month: str):
+def get_budget_page_data(year_month: str, page=None):
     """
     برای صفحه بودجه:
     - categories از hazineha
@@ -2580,15 +2653,10 @@ def calculate_budget_spent(categories, costs, category_id):
 
     return total
 
-def carry_budgets_to_current_month():
-    # user = get_current_user()
-    # if not user:
-    #     return []
+def carry_budgets_to_current_month(page=None):
+    workspace_id = get_current_workspace_id(page)
 
-    workspace_id = get_current_workspace_id()
-
-
-    today = today_local()
+    today = today_local(page)
     current_ym = today.strftime("%Y-%m")
     current_start = f"{current_ym}-01"
 
@@ -2658,14 +2726,10 @@ def carry_budgets_to_current_month():
 
 
 
-def get_current_month_dashboard_data(year_month=None):
-    # user = get_current_user()
-    # if not user:
-    #     return None
+def get_current_month_dashboard_data(year_month=None, page=None):
+    workspace_id = get_current_workspace_id(page)
 
-    workspace_id = get_current_workspace_id()
-
-    today = today_local()
+    today = today_local(page)
 
     if not year_month:
         year_month = today.strftime("%Y-%m")
@@ -2900,3 +2964,876 @@ def is_user_pro():
         return False
 
     return True
+
+
+# -------------fixed_expenses -----------------
+
+
+def get_fixed_expenses(page=None):
+    workspace_id = get_current_workspace_id(page)
+
+    if not workspace_id:
+        return []
+
+    rows = (
+        supabase.table("fixed_expenses")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .order("next_run_date", desc=False)
+        .execute()
+        .data
+    ) or []
+
+    category_ids = list({
+        r.get("id_hazine")
+        for r in rows
+        if r.get("id_hazine")
+    })
+
+    category_map = {}
+
+    if category_ids:
+        cat_rows = (
+            supabase.table("hazineha")
+            .select("id,title")
+            .eq("workspace_id", workspace_id)
+            .in_("id", category_ids)
+            .execute()
+            .data
+        ) or []
+
+        category_map = {
+            c["id"]: c.get("title") or ""
+            for c in cat_rows
+        }
+
+    for r in rows:
+        r["category_title"] = category_map.get(r.get("id_hazine"), "")
+
+    return rows
+
+def create_fixed_expense(
+    title,
+    amount,
+    id_hazine,
+    frequency,
+    next_run_date,
+    account_id,
+    status="active",
+    auto_create=True,
+    note=None,
+):
+    user = get_current_user()
+
+    if not user:
+        raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id()
+
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    if not id_hazine:
+        raise Exception("Category is required")
+
+    payload = {
+        "user_id": user.id,
+        "workspace_id": workspace_id,
+        "title": title,
+        "amount": float(amount),
+        "id_hazine": id_hazine,
+        "frequency": frequency,
+        "next_run_date": next_run_date,
+        "account_id": account_id,
+        "status": status,
+        "auto_create": bool(auto_create),
+        "note": note,
+    }
+
+    res = supabase.table("fixed_expenses").insert(payload).execute()
+
+    return res.data[0] if res.data else None
+
+
+def update_fixed_expense(
+    fixed_expense_id,
+    title,
+    amount,
+    id_hazine,
+    frequency,
+    next_run_date,
+    account_id,
+    status="active",
+    auto_create=True,
+    note=None,
+):
+    workspace_id = get_current_workspace_id()
+
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    if not fixed_expense_id:
+        raise Exception("fixed_expense_id is required")
+
+    if not id_hazine:
+        raise Exception("Category is required")
+
+    payload = {
+        "title": title,
+        "amount": float(amount),
+        "id_hazine": id_hazine,
+        "frequency": frequency,
+        "next_run_date": next_run_date,
+        "account_id": account_id,
+        "status": status,
+        "auto_create": bool(auto_create),
+        "note": note,
+    }
+
+    res = (
+        supabase.table("fixed_expenses")
+        .update(payload)
+        .eq("id", fixed_expense_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+
+def delete_fixed_expense(fixed_expense_id):
+    workspace_id = get_current_workspace_id()
+
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    res = (
+        supabase.table("fixed_expenses")
+        .delete()
+        .eq("id", fixed_expense_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    return res.data
+
+def add_months_to_date(d: date, months: int = 1) -> date:
+    month = d.month - 1 + months
+    year = d.year + month // 12
+    month = month % 12 + 1
+
+    day = min(d.day, calendar.monthrange(year, month)[1])
+
+    return date(year, month, day)
+
+
+def calculate_next_fixed_expense_date(current_date: date, frequency: str) -> date:
+    if frequency == "weekly":
+        return current_date + timedelta(days=7)
+
+    if frequency == "biweekly":
+        return current_date + timedelta(days=14)
+
+    if frequency == "monthly":
+        return add_months_to_date(current_date, 1)
+
+    if frequency == "yearly":
+        return add_months_to_date(current_date, 12)
+
+    return add_months_to_date(current_date, 1)
+
+
+def process_due_fixed_expenses(page=None):
+    user = get_current_user()
+
+    if not user:
+        raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id(page)
+
+    if not workspace_id:
+        return {
+            "ok": False,
+            "created_count": 0,
+            "checked_count": 0,
+            "message": "Workspace is not selected",
+        }
+
+    today = today_local(page)
+    today_iso = today.isoformat()
+
+    fixed_rows = (
+        supabase.table("fixed_expenses")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "active")
+        .eq("auto_create", True)
+        .lte("next_run_date", today_iso)
+        .execute()
+        .data
+    ) or []
+
+    created_count = 0
+
+    for item in fixed_rows:
+        try:
+            fixed_id = item.get("id")
+            title = item.get("title") or "Fixed Expense"
+            amount = float(item.get("amount") or 0)
+            id_hazine = item.get("id_hazine")
+            account_id = item.get("account_id")
+            frequency = item.get("frequency") or "monthly"
+            run_date_raw = item.get("next_run_date")
+
+            if not fixed_id:
+                continue
+
+            if amount <= 0:
+                continue
+
+            if not id_hazine:
+                print("[FIXED EXPENSE SKIPPED] missing id_hazine:", item, flush=True)
+                continue
+
+            if not account_id:
+                print("[FIXED EXPENSE SKIPPED] missing account_id:", item, flush=True)
+                continue
+
+            if not run_date_raw:
+                print("[FIXED EXPENSE SKIPPED] missing next_run_date:", item, flush=True)
+                continue
+
+            run_date = safe_picker_date(run_date_raw, page)
+
+            duplicate = (
+                supabase.table("cost")
+                .select("id")
+                .eq("workspace_id", workspace_id)
+                .eq("fixed_expense_id", fixed_id)
+                .eq("date_cost", run_date.isoformat())
+                .limit(1)
+                .execute()
+                .data
+            ) or []
+
+            next_date = calculate_next_fixed_expense_date(run_date, frequency)
+
+            if duplicate:
+                supabase.table("fixed_expenses").update({
+                    "next_run_date": next_date.isoformat(),
+                }).eq("id", fixed_id).eq("workspace_id", workspace_id).execute()
+
+                continue
+
+            cost_payload = {
+                "user_id": user.id,
+                "workspace_id": workspace_id,
+                "title": title,
+                "price": amount,
+                "date_cost": run_date.isoformat(),
+                "id_hazine": id_hazine,
+                "account_id": account_id,
+                "fixed_expense_id": fixed_id,
+                "temp_hazine": None,
+            }
+
+            supabase.table("cost").insert(cost_payload).execute()
+
+            supabase.table("fixed_expenses").update({
+                "next_run_date": next_date.isoformat(),
+            }).eq("id", fixed_id).eq("workspace_id", workspace_id).execute()
+
+            created_count += 1
+
+        except Exception as ex:
+            print("[PROCESS FIXED EXPENSE ERROR]", ex, "| item=", item, flush=True)
+
+    return {
+        "ok": True,
+        "created_count": created_count,
+        "checked_count": len(fixed_rows),
+    }
+    
+# ================= BANK IMPORT / RECONCILIATION =================
+
+def create_bank_import(
+    account_id,
+    file_name=None,
+    file_type=None,
+    detected_format=None,
+    date_from=None,
+    date_to=None,
+):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    if not account_id:
+        raise Exception("Account is required")
+
+    payload = {
+        "user_id": user.id,
+        "workspace_id": workspace_id,
+        "account_id": account_id,
+        "file_name": file_name,
+        "file_type": file_type,
+        "detected_format": detected_format,
+        "date_from": date_from,
+        "date_to": date_to,
+        "status": "draft",
+    }
+
+    res = supabase.table("bank_imports").insert(payload).execute()
+    return res.data[0] if res.data else None
+
+
+def get_bank_imports(page=None):
+    workspace_id = get_current_workspace_id(page)
+    if not workspace_id:
+        return []
+
+    rows = (
+        supabase.table("bank_imports")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    ) or []
+
+    account_ids = list({
+        r.get("account_id")
+        for r in rows
+        if r.get("account_id")
+    })
+
+    account_map = {}
+
+    if account_ids:
+        acc_rows = (
+            supabase.table("accounts")
+            .select("id,account_name,account_type")
+            .eq("workspace_id", workspace_id)
+            .in_("id", account_ids)
+            .execute()
+            .data
+        ) or []
+
+        account_map = {
+            a["id"]: a
+            for a in acc_rows
+        }
+
+    for r in rows:
+        acc = account_map.get(r.get("account_id")) or {}
+        r["account_name"] = acc.get("account_name", "")
+        r["account_type"] = acc.get("account_type", "")
+
+    return rows
+
+
+def get_bank_import_by_id(import_id, page=None):
+    workspace_id = get_current_workspace_id(page)
+    if not workspace_id:
+        return None
+
+    rows = (
+        supabase.table("bank_imports")
+        .select("*")
+        .eq("id", import_id)
+        .eq("workspace_id", workspace_id)
+        .limit(1)
+        .execute()
+        .data
+    ) or []
+
+    return rows[0] if rows else None
+
+
+def add_bank_import_rows(import_id, account_id, rows):
+    user = get_current_user()
+    if not user:
+        raise Exception("User is not logged in")
+
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    if not import_id:
+        raise Exception("import_id is required")
+
+    payloads = []
+
+    for index, row in enumerate(rows or []):
+        payloads.append({
+            "import_id": import_id,
+            "user_id": user.id,
+            "workspace_id": workspace_id,
+            "account_id": account_id,
+            "row_index": row.get("row_index", index + 1),
+            "bank_date": row.get("bank_date"),
+            "bank_description": row.get("bank_description"),
+            "raw_text": row.get("raw_text"),
+            "amount": row.get("amount"),
+            "currency": row.get("currency") or "CAD",
+            "transaction_type": row.get("transaction_type") or "unknown",
+            "match_status": row.get("match_status") or "new",
+            "confidence_score": row.get("confidence_score") or 0,
+            "matched_cost_id": row.get("matched_cost_id"),
+            "matched_income_id": row.get("matched_income_id"),
+            "matched_transfer_id": row.get("matched_transfer_id"),
+            "suggested_category_id": row.get("suggested_category_id"),
+            "suggested_member_id": row.get("suggested_member_id"),
+            "note": row.get("note"),
+        })
+
+    if not payloads:
+        return []
+
+    res = supabase.table("bank_import_rows").insert(payloads).execute()
+
+    refresh_bank_import_counts(import_id)
+
+    return res.data or []
+
+
+def get_bank_import_rows(import_id, status=None, page=None):
+    workspace_id = get_current_workspace_id(page)
+    if not workspace_id:
+        return []
+
+    q = (
+        supabase.table("bank_import_rows")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .eq("import_id", import_id)
+        .order("bank_date", desc=True)
+        .order("id", desc=True)
+    )
+
+    if status:
+        q = q.eq("match_status", status)
+
+    rows = q.execute().data or []
+
+    category_ids = list({
+        r.get("suggested_category_id")
+        for r in rows
+        if r.get("suggested_category_id")
+    })
+
+    category_map = {}
+
+    if category_ids:
+        cat_rows = (
+            supabase.table("hazineha")
+            .select("id,title")
+            .eq("workspace_id", workspace_id)
+            .in_("id", category_ids)
+            .execute()
+            .data
+        ) or []
+
+        category_map = {
+            c["id"]: c.get("title") or ""
+            for c in cat_rows
+        }
+
+    for r in rows:
+        r["suggested_category_title"] = category_map.get(
+            r.get("suggested_category_id"),
+            "",
+        )
+
+    return rows
+
+
+def update_bank_import_row_decision(
+    row_id,
+    user_decision,
+    match_status=None,
+    matched_cost_id=None,
+    matched_income_id=None,
+    matched_transfer_id=None,
+    suggested_category_id=None,
+    suggested_member_id=None,
+    note=None,
+):
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    payload = {
+        "user_decision": user_decision,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    if match_status is not None:
+        payload["match_status"] = match_status
+
+    if matched_cost_id is not None:
+        payload["matched_cost_id"] = matched_cost_id
+
+    if matched_income_id is not None:
+        payload["matched_income_id"] = matched_income_id
+
+    if matched_transfer_id is not None:
+        payload["matched_transfer_id"] = matched_transfer_id
+
+    if suggested_category_id is not None:
+        payload["suggested_category_id"] = suggested_category_id
+
+    if suggested_member_id is not None:
+        payload["suggested_member_id"] = suggested_member_id
+
+    if note is not None:
+        payload["note"] = note
+
+    res = (
+        supabase.table("bank_import_rows")
+        .update(payload)
+        .eq("id", row_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+
+def refresh_bank_import_counts(import_id):
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        return None
+
+    rows = (
+        supabase.table("bank_import_rows")
+        .select("match_status")
+        .eq("workspace_id", workspace_id)
+        .eq("import_id", import_id)
+        .execute()
+        .data
+    ) or []
+
+    total_rows = len(rows)
+
+    matched_count = 0
+    possible_count = 0
+    new_count = 0
+    review_count = 0
+    ignored_count = 0
+
+    for r in rows:
+        status = r.get("match_status")
+
+        if status in ("matched", "confirmed"):
+            matched_count += 1
+        elif status == "possible_match":
+            possible_count += 1
+        elif status == "new":
+            new_count += 1
+        elif status in ("needs_review", "error"):
+            review_count += 1
+        elif status == "ignored":
+            ignored_count += 1
+
+    payload = {
+        "total_rows": total_rows,
+        "matched_count": matched_count,
+        "possible_count": possible_count,
+        "new_count": new_count,
+        "review_count": review_count,
+        "ignored_count": ignored_count,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    res = (
+        supabase.table("bank_imports")
+        .update(payload)
+        .eq("id", import_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+
+def update_bank_import_status(import_id, status, error_message=None):
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    payload = {
+        "status": status,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    if error_message is not None:
+        payload["error_message"] = error_message
+
+    res = (
+        supabase.table("bank_imports")
+        .update(payload)
+        .eq("id", import_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    return res.data[0] if res.data else None
+
+def find_possible_bank_matches(account_id, bank_date, amount, day_window=2, page=None):
+    workspace_id = get_current_workspace_id(page)
+    if not workspace_id:
+        return []
+
+    if not account_id or not bank_date or amount is None:
+        return []
+
+    try:
+        amount_float = float(amount)
+    except Exception:
+        return []
+
+    try:
+        d = safe_picker_date(bank_date, page)
+    except Exception:
+        try:
+            d = safe_picker_date(datetime.strptime(str(bank_date), "%Y-%m-%d"), page)
+        except Exception:
+            return []
+
+    start_date = (d - timedelta(days=day_window)).isoformat()
+    end_date = (d + timedelta(days=day_window)).isoformat()
+
+def prepare_bank_import_rows_for_save(account_id, parsed_rows, page=None):
+    prepared = []
+
+    for row in parsed_rows or []:
+        bank_date = row.get("bank_date")
+        amount = row.get("amount")
+
+        matches = find_possible_bank_matches(
+            account_id=account_id,
+            bank_date=bank_date,
+            amount=amount,
+            day_window=2,
+        )
+
+        new_row = dict(row)
+
+        if matches:
+            best = matches[0]
+
+            # مهم:
+            # match سیستمی نباید نهایی حساب شود.
+            # فقط یعنی سیستم مشابه پیدا کرده و کاربر باید بررسی کند.
+            new_row["match_status"] = "possible_match"
+
+            if best.get("type") == "expense":
+                new_row["matched_cost_id"] = best.get("id")
+            elif best.get("type") == "income":
+                new_row["matched_income_id"] = best.get("id")
+            elif best.get("type") in ("transfer", "transfer_in", "transfer_out"):
+                new_row["matched_transfer_id"] = best.get("id")
+
+            new_row["confidence_score"] = max(
+                float(new_row.get("confidence_score") or 0),
+                float(best.get("score") or 0),
+            )
+        else:
+            if not bank_date or amount is None:
+                new_row["match_status"] = "needs_review"
+            else:
+                new_row["match_status"] = "new"
+
+        prepared.append(new_row)
+
+    return prepared
+
+
+
+def mark_bank_row_as_created_cost(bank_row_id, cost_id):
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    if not bank_row_id:
+        raise Exception("bank_row_id is required")
+
+    if not cost_id:
+        raise Exception("cost_id is required")
+
+    res = (
+        supabase.table("bank_import_rows")
+        .update({
+            "created_cost_id": cost_id,
+            "matched_cost_id": cost_id,
+            "match_status": "confirmed",
+            "user_decision": "create_expense",
+            "updated_at": datetime.utcnow().isoformat(),
+        })
+        .eq("id", bank_row_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    updated_row = res.data[0] if res.data else None
+
+    if updated_row and updated_row.get("import_id"):
+        refresh_bank_import_counts(updated_row.get("import_id"))
+
+    return updated_row
+
+def get_income_transaction_by_id(tx_id):
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        return None
+
+    rows = (
+        supabase.table("income_transactions")
+        .select("*")
+        .eq("id", tx_id)
+        .eq("workspace_id", workspace_id)
+        .limit(1)
+        .execute()
+        .data
+    ) or []
+
+    return rows[0] if rows else None
+
+
+def mark_bank_row_as_created_income(bank_row_id, income_id):
+    workspace_id = get_current_workspace_id()
+    if not workspace_id:
+        raise Exception("Workspace is not selected")
+
+    if not bank_row_id:
+        raise Exception("bank_row_id is required")
+
+    if not income_id:
+        raise Exception("income_id is required")
+
+    res = (
+        supabase.table("bank_import_rows")
+        .update({
+            "created_income_id": income_id,
+            "matched_income_id": income_id,
+            "match_status": "confirmed",
+            "user_decision": "create_income",
+            "updated_at": datetime.utcnow().isoformat(),
+        })
+        .eq("id", bank_row_id)
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+
+    updated_row = res.data[0] if res.data else None
+
+    if updated_row and updated_row.get("import_id"):
+        refresh_bank_import_counts(updated_row.get("import_id"))
+
+    return updated_row
+
+def delete_my_account():
+    try:
+        print("[DELETE MY ACCOUNT] called", flush=True)
+
+        user = get_current_user()
+
+        if not user:
+            print("[DELETE MY ACCOUNT] no user", flush=True)
+            return {
+                "ok": False,
+                "error": "User is not logged in."
+            }
+
+        print("[DELETE MY ACCOUNT] user_id:", user.id, flush=True)
+
+        res = supabase.rpc("delete_my_account_data").execute()
+
+        print("[DELETE MY ACCOUNT RPC RESULT]", res.data, flush=True)
+
+        if not res.data:
+            return {
+                "ok": False,
+                "error": "Delete account RPC returned no data."
+            }
+
+        if isinstance(res.data, dict) and not res.data.get("ok"):
+            return {
+                "ok": False,
+                "error": res.data.get("error", "Delete account failed.")
+            }
+
+        try:
+            clear_hazineha_cache()
+        except Exception:
+            pass
+
+        try:
+            supabase.auth.sign_out()
+        except Exception as ex:
+            print("[DELETE ACCOUNT] sign_out:", ex, flush=True)
+
+        return {
+            "ok": True,
+            "data": res.data
+        }
+
+    except Exception as ex:
+        print("[DELETE MY ACCOUNT ERROR]", repr(ex), flush=True)
+        return {
+            "ok": False,
+            "error": str(ex),
+        }
+
+
+def is_current_user_allowed():
+    try:
+        profile = get_my_profile()
+
+        if not profile:
+            return {
+                "ok": False,
+                "reason": "profile_not_found",
+                "message": "This account is not available.",
+            }
+
+        print(
+            "[USER ALLOWED PROFILE]",
+            "is_active=", profile.get("is_active"),
+            "status=", profile.get("status"),
+            "deleted_at=", profile.get("deleted_at"),
+            flush=True,
+        )
+
+        if profile.get("is_active") is False:
+            return {
+                "ok": False,
+                "reason": "inactive",
+                "message": "This account has been disabled.",
+            }
+
+        if profile.get("status") == "deleted" or profile.get("deleted_at"):
+            return {
+                "ok": False,
+                "reason": "deleted",
+                "message": "This account has been deleted and can no longer be used.",
+            }
+
+        return {
+            "ok": True,
+            "profile": profile,
+        }
+
+    except Exception as ex:
+        print("[USER ALLOWED CHECK ERROR]", ex, flush=True)
+        return {
+            "ok": False,
+            "reason": "error",
+            "message": "Could not verify this account.",
+        }
+    

@@ -12,8 +12,15 @@ from services.supabase_service import (
 
 
 def workspaces_view(page: ft.Page):
+    page.data = page.data or {}
 
-    workspaces_list = ft.Column(spacing=10, expand=True, scroll=ft.ScrollMode.AUTO)
+
+    workspaces_list = ft.ListView(
+        spacing=10,
+        expand=True,
+        padding=0,
+        auto_scroll=False,
+    )
 
     title_tf = ft.TextField(
         label="Workspace title",
@@ -25,6 +32,10 @@ def workspaces_view(page: ft.Page):
     active_switch = ft.Switch(label="Active", value=True)
 
     selected_workspace = {"id": None}
+    default_workspace = {"id": None}
+
+    def go_back(e=None):
+        page.app_go("sabtehazine")
 
     def snackbar(msg):
         page.snack_bar = ft.SnackBar(ft.Text(msg))
@@ -308,11 +319,34 @@ def workspaces_view(page: ft.Page):
         dialog.open = True
         page.update()
 
+    async def load_default_workspace():
+        default_workspace["id"] = await page.shared_preferences.get("current_workspace_id")
+
+
+    async def set_default_workspace_async(workspace_id):
+        await page.shared_preferences.set("current_workspace_id", workspace_id)
+
+        page.data = page.data or {}
+        page.data["current_workspace_id"] = workspace_id
+
+        default_workspace["id"] = workspace_id
+
+        page.data["sabtehazine_changed"] = True
+        page.data.pop("sabtehazine_view_cache", None)
+        page.data["sabtehazine_loaded"] = False
+
+        snackbar("Default workspace changed.")
+        load_workspaces()
+
+
+    def set_default_workspace_click(e, row):
+        page.run_task(set_default_workspace_async, row["id"])
 
     def workspace_card(row):
         is_active = row.get("is_active", True)
         shared_count = row.get("shared_count", 0) or 0
         has_share = shared_count > 0
+        is_default = str(row.get("id")) == str(default_workspace.get("id"))
 
         return ft.Container(
             bgcolor="#FFFFFF",
@@ -361,6 +395,19 @@ def workspaces_view(page: ft.Page):
                                             weight=ft.FontWeight.W_600,
                                         ),
                                     ),
+
+                                    ft.Container(
+                                        visible=is_default,
+                                        padding=ft.padding.symmetric(horizontal=7, vertical=2),
+                                        border_radius=999,
+                                        bgcolor="#DBEAFE",
+                                        content=ft.Text(
+                                            "Default",
+                                            size=9,
+                                            color="#1D4ED8",
+                                            weight=ft.FontWeight.W_600,
+                                        ),
+                                    ),
                                 ],
                                 spacing=6,
                             ),
@@ -372,6 +419,18 @@ def workspaces_view(page: ft.Page):
                     # دکمه‌ها
                     ft.Row(
                         [
+                            ft.IconButton(
+                                icon=ft.Icons.STAR if is_default else ft.Icons.STAR_BORDER,
+                                icon_size=16,
+                                tooltip="Default workspace" if is_default else "Set as default",
+                                icon_color="#F59E0B" if is_default else "#94A3B8",
+                                width=30,
+                                height=30,
+                                style=ft.ButtonStyle(padding=0),
+                                disabled=is_default,
+                                on_click=lambda e: set_default_workspace_click(e, row),
+                            ),
+
                             ft.IconButton(
                                 icon=ft.Icons.IOS_SHARE_OUTLINED,
                                 icon_size=15,
@@ -412,20 +471,41 @@ def workspaces_view(page: ft.Page):
             ),
         )
 
+
     def load_workspaces():
+        print("========== WORKSPACES VIEW LOAD ==========", flush=True)
+
         workspaces_list.controls.clear()
 
-        rows = get_my_workspaces()
+        try:
+            rows = get_my_workspaces()
+            print("[WORKSPACES VIEW] rows count:", len(rows or []), flush=True)
+            print("[WORKSPACES VIEW] rows:", rows, flush=True)
+
+        except Exception as ex:
+            print("[WORKSPACES VIEW] load error:", repr(ex), flush=True)
+            rows = []
 
         if not rows:
             workspaces_list.controls.append(
                 ft.Container(
                     alignment=ft.Alignment.CENTER,
                     expand=True,
-                    content=ft.Text(
-                        "No workspace yet.",
-                        size=13,
-                        color="#94A3B8",
+                    content=ft.Column(
+                        [
+                            ft.Text(
+                                "No workspace yet.",
+                                size=13,
+                                color="#94A3B8",
+                            ),
+                            ft.Text(
+                                "Check terminal logs for RLS/session debug.",
+                                size=11,
+                                color="#CBD5E1",
+                            ),
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=6,
                     ),
                 )
             )
@@ -433,9 +513,17 @@ def workspaces_view(page: ft.Page):
             for row in rows:
                 workspaces_list.controls.append(workspace_card(row))
 
+        print("==========================================", flush=True)
         page.update()
 
-    load_workspaces()
+
+    async def init_workspaces_view():
+        await load_default_workspace()
+        load_workspaces()
+
+
+    page.run_task(init_workspaces_view)
+    # load_workspaces()
 
     return ft.View(
         route="/workspaces_view",
@@ -443,19 +531,32 @@ def workspaces_view(page: ft.Page):
         controls=[
             ft.Container(
                 expand=True,
-                padding=20,
+                padding=ft.padding.only(
+                    top=52,
+                    left=16,
+                    right=16,
+                    bottom=16,
+                ),
                 content=ft.Column(
                     [
                         ft.Row(
                             [
-                                ft.IconButton(
-                                    icon=ft.Icons.ARROW_BACK,
-                                    icon_color="#0F172A",
-                                    icon_size=20,
-                                    on_click=lambda e: page.app_go("sabtehazine"),
+                                ft.Container(
+                                    width=50,
+                                    height=50,
+                                    border_radius=16,
+                                    bgcolor="#FFFFFF",
+                                    border=ft.border.all(1, "#E5E7EB"),
+                                    alignment=ft.Alignment.CENTER,
+                                    ink=True,
+                                    on_click=go_back,
+                                    content=ft.Icon(
+                                        ft.Icons.ARROW_BACK,
+                                        color="#0F172A",
+                                        size=24,
+                                    ),
                                 ),
-
-                                ft.Text(
+                               ft.Text(
                                     "Workspaces",
                                     size=17,
                                     weight=ft.FontWeight.W_700,

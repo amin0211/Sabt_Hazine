@@ -1,19 +1,13 @@
 import flet as ft
-from datetime import date
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-TZ = ZoneInfo("America/Vancouver")
-
-def today_local():
-    return datetime.now(TZ).date()
-
+from services.utils import today_local
 from services.supabase_service import get_current_month_dashboard_data
 
 
 def dashboard_view(page: ft.Page):
-    data = get_current_month_dashboard_data()
-    today = today_local()
+    page.data = page.data or {}
+
+    data = get_current_month_dashboard_data(page=page)
+    today = today_local(page)
      
     if not data:
         data = {
@@ -31,7 +25,13 @@ def dashboard_view(page: ft.Page):
             "insights": [],
         }
 
-    def go_back(e):
+    def go_back(e=None):
+        # page.data.pop("sabtehazine_view_cache", None)
+        page.data = page.data or {}
+
+        page.data["sabtehazine_changed"] = False
+        page.data["sabtehazine_loaded"] = True
+
         page.app_go("sabtehazine")
 
     def open_budget(e):
@@ -110,12 +110,24 @@ def dashboard_view(page: ft.Page):
             [
                 ft.Row(
                     [
-                        ft.IconButton(
-                            icon=ft.Icons.ARROW_BACK,
-                            icon_size=20,
-                            tooltip="Back",
-                            on_click=go_back,
-                        ),
+                        ft.Container(
+                            width=52,
+                            height=52,
+                            alignment=ft.Alignment.CENTER,
+                            content=ft.IconButton(
+                                icon=ft.Icons.ARROW_BACK_ROUNDED,
+                                icon_size=32,
+                                icon_color="#111827",
+                                tooltip="Back",
+                                width=52,
+                                height=52,
+                                style=ft.ButtonStyle(
+                                    padding=0,
+                                ),
+                                on_click=go_back,
+                            ),
+                        ),                        
+
                         ft.Text(
                             data.get("month", ""),
                             size=18,
@@ -243,6 +255,10 @@ def dashboard_view(page: ft.Page):
         bgcolor="#FFFFFF",
     )
 
+    def open_trends(e=None):
+        page.data["from"] = "dashboard_view"
+        page.app_go("trend_view")
+        
     report_buttons = ft.Container(
         content=ft.Column(
             [
@@ -259,20 +275,11 @@ def dashboard_view(page: ft.Page):
                         ),                   
                         ft.ElevatedButton(
                             content=ft.Text("Trends"),
-                            on_click=lambda e: page.app_go("trend_view"),
+                            on_click=open_trends,
                         ),
                     ],
                     spacing=8,
                 ),
-                # ft.Row(
-                #     [
-                        # ft.ElevatedButton(
-                        #     content=ft.Text("Transactions"),
-                        #     on_click=lambda e: page.app_go("transaction_report"),
-                        # ),
-                    # ],
-                    # spacing=8,
-                # ),
             ],
             spacing=10,
         ),
@@ -281,36 +288,50 @@ def dashboard_view(page: ft.Page):
         bgcolor="#FFFFFF",
     )
 
-    content = ft.Container(
-        content=ft.Column(
-            [
-                header,
-                progress_card,
-                forecast_card,
-                insights_card,
+    dashboard_list = ft.ListView(
+        expand=True,
+        spacing=12,
+        padding=0,
+        auto_scroll=False,
+        controls=[
+            header,
+            progress_card,
+            forecast_card,
+            insights_card,
+            report_buttons,
+        ],
+    )
 
-                ft.SafeArea(
-                    avoid_intrusions_top=False,
-                    avoid_intrusions_left=False,
-                    avoid_intrusions_right=False,
-                    avoid_intrusions_bottom=True,
-                    maintain_bottom_view_padding=True,
-                    minimum_padding=ft.padding.only(bottom=12),
-                    content=report_buttons,
-                ),
-            ],
-            spacing=12,
-            scroll=ft.ScrollMode.AUTO,
-            expand=True,
+    content = ft.Container(
+        content=dashboard_list,
+        padding=ft.padding.only(
+            left=12,
+            right=12,
+            top=42,
+            bottom=4 if page.platform == ft.PagePlatform.ANDROID else 12,
         ),
-        padding=12,
         bgcolor="#F3F4F6",
         expand=True,
     )
 
+    if page.platform == ft.PagePlatform.ANDROID:
+        page_body = ft.SafeArea(
+            expand=True,
+            avoid_intrusions_top=False,
+            avoid_intrusions_left=False,
+            avoid_intrusions_right=False,
+            avoid_intrusions_bottom=True,
+            content=content,
+        )
+    else:
+        page_body = content
+        
     return ft.View(
         route="/dashboard_view",
-        controls=[content],
+        controls=[
+            page_body,
+        ],
         bgcolor="#F3F4F6",
         padding=0,
+        spacing=0,
     )

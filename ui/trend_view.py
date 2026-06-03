@@ -1,6 +1,6 @@
 import flet as ft
-from datetime import datetime, date
-from zoneinfo import ZoneInfo
+from datetime import date
+from services.utils import today_local, safe_picker_date
 from collections import defaultdict
 
 
@@ -9,9 +9,8 @@ from services.supabase_service import (
     load_active_hazineha,
     get_descendant_category_ids,
     get_members,
+    get_my_profile,
 )
-
-TZ = ZoneInfo("America/Vancouver")
 
 
 def money(v):
@@ -56,13 +55,21 @@ def _mini_card(title, value, icon):
                 ft.Row(
                     [
                         ft.Icon(icon, size=16, color="#2563EB"),
-                        ft.Text(title, size=9, color="#6B7280"),
+                        ft.Text(
+                            title,
+                            size=9,
+                            color="#6B7280",
+                            max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                            expand=True,
+                        ),
                     ],
                     spacing=5,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 ft.Text(
                     value,
-                    size=12,
+                    size=11,
                     weight=ft.FontWeight.BOLD,
                     color="#111827",
                     max_lines=1,
@@ -277,7 +284,7 @@ def _forecast_box(costs, from_date, to_date):
     )
 
 
-def _daily_spending_box(costs):
+def _daily_spending_box(costs, page=None):
     daily_totals = {}
 
     for row in costs:
@@ -319,7 +326,7 @@ def _daily_spending_box(costs):
             except:
                 day_label = ""
 
-            is_today = d == today_local().isoformat()
+            is_today = d == today_local(page).isoformat()
 
             daily_list.controls.append(
                 ft.Container(
@@ -454,8 +461,8 @@ def _daily_spending_box(costs):
         ),
     )
 
-def _spending_page(filters):
-    costs = _filter_costs(filters)
+def _spending_page(filters, page=None):
+    costs = _filter_costs(filters, page)
 
     return ft.Container(
         padding=12,
@@ -466,7 +473,7 @@ def _spending_page(filters):
                     filters["from_date"],
                     filters["to_date"],
                 ),
-                _daily_spending_box(costs),
+                _daily_spending_box(costs, page),
                 _category_trends_box(costs),
                 _member_spending_box(costs),
                 _forecast_box(
@@ -481,17 +488,13 @@ def _spending_page(filters):
         ),
     )
 
-def today_local():
-    return datetime.now(TZ).date()
-
-
 def _total_expense(costs):
     return sum(float(row.get("price") or 0) for row in costs)
 
 
-def _filter_costs(filters):
+def _filter_costs(filters, page=None):
     costs = load_my_costs_by_date(
-        None, 
+        page,
         filters["from_date"],
         filters["to_date"],
     )
@@ -531,72 +534,6 @@ def _card(title, content):
         ),
     )
 
-def _category_trends_box(costs):
-    category_totals = {}
-
-    for row in costs:
-        title = row.get("category_title") or "Unknown"
-        category_totals[title] = category_totals.get(title, 0) + float(row.get("price") or 0)
-
-    top_items = sorted(
-        category_totals.items(),
-        key=lambda x: x[1],
-        reverse=True,
-    )[:5]
-
-    rows = []
-
-    for title, amount in top_items:
-        rows.append(
-            ft.Row(
-                [
-                    ft.Text(title, expand=True, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(f"{amount:,.0f}"),
-                ],
-                spacing=8,
-            )
-        )
-
-    if not rows:
-        rows = [ft.Text("No category data", color="#6B7280")]
-
-    return _card(
-        "Category Trends",
-        ft.Container(
-            height=180,
-            bgcolor="#F9FAFB",
-            border_radius=12,
-            padding=10,
-            content=ft.Column(rows, spacing=6),
-        ),
-    )
-
-
-def _forecast_box(costs, from_date, to_date):
-    total = _total_expense(costs)
-
-    try:
-        start = date.fromisoformat(from_date)
-        end = date.fromisoformat(to_date)
-        days = max((end - start).days + 1, 1)
-    except Exception:
-        days = 1
-
-    avg_daily = total / days
-    projected_30_days = avg_daily * 30
-
-    return _card(
-        "Forecast",
-        ft.Column(
-            [
-                ft.Text(f"Average daily spending: {avg_daily:,.0f}"),
-                ft.Text(f"Projected 30-day spending: {projected_30_days:,.0f}"),
-            ],
-            spacing=6,
-        ),
-    )
-
-
 
 def _budget_page():
     return ft.Container(
@@ -623,8 +560,11 @@ def trend_view(page: ft.Page):
     if not isinstance(page.data, dict):
         page.data = {}
 
-    start_date = today_local().replace(day=1)
-    end_date = today_local()
+
+    today = today_local(page)
+
+    start_date = today.replace(day=1)
+    end_date = today
 
     selected_tab = {"value": "spending"}
 
@@ -708,7 +648,7 @@ def trend_view(page: ft.Page):
     start_btn = ft.GestureDetector(
         on_tap=open_start_picker,
         content=build_filter_button(
-            f"Fr: {start_date}",
+            f"Fr: {start_date.isoformat()}",
             ft.Icons.CALENDAR_MONTH,
         ),
     )
@@ -716,7 +656,7 @@ def trend_view(page: ft.Page):
     end_btn = ft.GestureDetector(
         on_tap=open_end_picker,
         content=build_filter_button(
-            f"To: {end_date}",
+            f"To: {end_date.isoformat()}",
             ft.Icons.DATE_RANGE,
         ),
     )
@@ -727,15 +667,11 @@ def trend_view(page: ft.Page):
         if not start_picker.value:
             return
 
-        picked = start_picker.value
-
-        if isinstance(picked, datetime):
-            picked = picked.date()
-
-        start_date = picked
+        start_date = safe_picker_date(start_picker.value, page)
+        start_picker.value = start_date
 
         start_btn.content = build_filter_button(
-            f"From: {start_date}",
+            f"Fr: {start_date.isoformat()}",
             ft.Icons.CALENDAR_MONTH,
         )
 
@@ -747,15 +683,11 @@ def trend_view(page: ft.Page):
         if not end_picker.value:
             return
 
-        picked = end_picker.value
-
-        if isinstance(picked, datetime):
-            picked = picked.date()
-
-        end_date = picked
+        end_date = safe_picker_date(end_picker.value, page)
+        end_picker.value = end_date
 
         end_btn.content = build_filter_button(
-            f"To: {end_date}",
+            f"To: {end_date.isoformat()}",
             ft.Icons.DATE_RANGE,
         )
 
@@ -976,7 +908,7 @@ def trend_view(page: ft.Page):
 
     def build_current_page():
         if selected_tab["value"] == "spending":
-            return _spending_page(filters)
+            return _spending_page(filters, page)
 
         if selected_tab["value"] == "budget":
             return _budget_page()
@@ -1083,10 +1015,16 @@ def trend_view(page: ft.Page):
     view = ft.View(
         route="/trend_view",
         bgcolor=APP_BG,
+        padding=0,
         controls=[
             ft.Container(
                 expand=True,
-                padding=10,
+                padding=ft.padding.only(
+                    left=10,
+                    right=10,
+                    top=42,
+                    bottom=10,
+                ),
                 content=body,
             )
         ],

@@ -1,5 +1,6 @@
 import flet as ft
-from datetime import date, datetime
+import asyncio
+from services.utils import today_local, safe_picker_date
 
 from services.supabase_service import (
     get_accounts,
@@ -13,6 +14,57 @@ from services.supabase_service import (
     get_descendant_category_ids,
     load_active_hazineha,
 )
+
+
+
+
+
+def normalize_amount_text(value: str, allow_negative: bool = False) -> str:
+    """
+    مناسب برای iOS/Android:
+    - اعداد فارسی/عربی را انگلیسی می‌کند
+    - ممیز فارسی/عربی را به . تبدیل می‌کند
+    - کاراکترهای اضافی را حذف می‌کند
+    - فقط یک نقطه اعشار نگه می‌دارد
+    - منفی را فقط اگر allow_negative=True باشد قبول می‌کند
+    """
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+
+    digits_map = str.maketrans(
+        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬,−–—",
+        "01234567890123456789...---"
+    )
+    text = text.translate(digits_map)
+
+    cleaned = []
+    has_dot = False
+    has_minus = False
+
+    for i, ch in enumerate(text):
+        if ch.isdigit():
+            cleaned.append(ch)
+
+        elif ch == "." and not has_dot:
+            cleaned.append(".")
+            has_dot = True
+
+        elif ch == "-" and allow_negative and not has_minus and len(cleaned) == 0:
+            cleaned.append("-")
+            has_minus = True
+
+    return "".join(cleaned)
+
+
+def parse_amount(value: str, allow_negative: bool = False):
+    text = normalize_amount_text(value, allow_negative=allow_negative)
+
+    if text in ("", "-", ".", "-."):
+        raise ValueError("Amount is empty")
+
+    return float(text)
 
 
 DEFAULT_ACCOUNT_NAMES = {
@@ -55,8 +107,20 @@ ACCOUNT_TYPE_COLORS = {
 }
 
 
+
 def accounts_view(page: ft.Page):
-    accounts_column = ft.Column(spacing=12, expand=True)
+
+    page.data = page.data or {}
+
+
+    # accounts_column = ft.Column(spacing=12, expand=True)    IOS
+    accounts_column = ft.ListView(
+        expand=True,
+        spacing=12,
+        padding=ft.padding.only(left=16, right=16, top=8, bottom=24),
+        auto_scroll=False,
+    )
+
     editing_account_id = {"value": None}
 
     message = ft.Text("", size=12, color="#64748B")
@@ -67,15 +131,17 @@ def accounts_view(page: ft.Page):
 
     transfer_amount = ft.TextField(
         label="Amount",
-        keyboard_type=ft.KeyboardType.NUMBER,
+        keyboard_type=ft.KeyboardType.TEXT,
+        hint_text="Example: 12.50",
         expand=True,
         border_radius=14,
         text_size=11,
     )
 
+
     transfer_date = ft.TextField(
         label="Date",
-        value=date.today().isoformat(),
+        value=today_local(page).isoformat(),
         expand=True,
         border_radius=14,
         text_size=11,
@@ -100,7 +166,8 @@ def accounts_view(page: ft.Page):
     initial_balance = ft.TextField(
         label="Initial Balance",
         value="0",
-        keyboard_type=ft.KeyboardType.NUMBER,
+        keyboard_type=ft.KeyboardType.TEXT,
+        hint_text="Example: 100.00",
         expand=True,
         border_radius=14,
     )
@@ -125,8 +192,8 @@ def accounts_view(page: ft.Page):
     def safe_update():
         try:
             page.update()
-        except Exception:
-            pass
+        except Exception as ex:
+            print("PAGE UPDATE ERROR:", ex)
 
     def money(value):
         try:
@@ -155,18 +222,32 @@ def accounts_view(page: ft.Page):
     account_type.on_change = on_type_change
 
     def show_add_form(e=None):
+        print("ADD ACCOUNT CLICKED")
+
         reset_form()
         form_title.value = "Add New Account"
         form_subtitle.value = "Create a new account to track your money."
         form_icon.bgcolor = "#DBEAFE"
         form_icon.content = ft.Icon(ft.Icons.ADD, color="#2563EB", size=24)
+
         form_card.visible = True
-        safe_update()
+        
+        account_dialog.content.width = mobile_dialog_width()
+        account_dialog.content.height = mobile_dialog_height()
+
+        account_dialog.open = True
+
+        page.update()
 
     def hide_form(e=None):
         reset_form()
+
         form_card.visible = False
-        safe_update()
+        account_dialog.open = False
+
+        page.update()
+
+
 
     def close_account_transactions_dialog(dialog):
         dialog.open = False
@@ -199,10 +280,18 @@ def accounts_view(page: ft.Page):
             safe_update()
             return
 
+
         try:
-            amount = float(transfer_amount.value or 0)
+            transfer_amount.value = normalize_amount_text(
+                transfer_amount.value,
+                allow_negative=False,
+            )
+            amount = parse_amount(
+                transfer_amount.value,
+                allow_negative=False,
+            )
         except ValueError:
-            transfer_message.value = "Amount must be a number."
+            transfer_message.value = "Amount must be a valid number."
             safe_update()
             return
 
@@ -222,7 +311,7 @@ def accounts_view(page: ft.Page):
 
             transfer_amount.value = ""
             transfer_note.value = ""
-            transfer_date.value = date.today().isoformat()
+            transfer_date.value = today_local(page).isoformat()
 
             load_accounts()
             transfer_dialog.open = False
@@ -304,7 +393,8 @@ def accounts_view(page: ft.Page):
         actions_alignment=ft.MainAxisAlignment.END,
     )
 
-    page.overlay.append(transfer_dialog)
+    if transfer_dialog not in page.overlay:
+        page.overlay.append(transfer_dialog)
 
     def open_transfer_dialog(e=None):
         try:
@@ -324,7 +414,8 @@ def accounts_view(page: ft.Page):
         actions_alignment=ft.MainAxisAlignment.CENTER,
     )
 
-    page.overlay.append(confirm_delete_dialog)
+    if confirm_delete_dialog not in page.overlay:
+        page.overlay.append(confirm_delete_dialog)
 
     def open_account_transactions(account, balance):
         selected_category = {
@@ -553,12 +644,24 @@ def accounts_view(page: ft.Page):
                     overflow=ft.TextOverflow.ELLIPSIS,
                 )
 
-                from_picker = ft.DatePicker()
-                to_picker = ft.DatePicker()
+                from_picker = ft.DatePicker(
+                    value=safe_picker_date(from_date_value["value"], page)
+                    if from_date_value["value"]
+                    else today_local(page)
+                )
 
-                page.overlay.append(from_picker)
-                page.overlay.append(to_picker)
+                to_picker = ft.DatePicker(
+                    value=safe_picker_date(to_date_value["value"], page)
+                    if to_date_value["value"]
+                    else today_local(page)
+                )
 
+                if from_picker not in page.overlay:
+                    page.overlay.append(from_picker)
+
+                if to_picker not in page.overlay:
+                    page.overlay.append(to_picker)
+                    
                 def refresh_filter_dialog():
                     from_date_text.value = from_date_value["value"] or "From date"
                     to_date_text.value = to_date_value["value"] or "To date"
@@ -578,18 +681,26 @@ def accounts_view(page: ft.Page):
                     refresh_filter_dialog()
 
                 def on_from_change(e):
-                    picked = from_picker.value
-                    if isinstance(picked, datetime):
-                        picked = picked.date()
-                    from_date_value["value"] = picked.isoformat() if picked else None
+                    if not from_picker.value:
+                        return
+
+                    picked = safe_picker_date(from_picker.value, page)
+                    from_picker.value = picked
+
+                    from_date_value["value"] = picked.isoformat()
                     refresh_filter_dialog()
 
+
                 def on_to_change(e):
-                    picked = to_picker.value
-                    if isinstance(picked, datetime):
-                        picked = picked.date()
-                    to_date_value["value"] = picked.isoformat() if picked else None
+                    if not to_picker.value:
+                        return
+
+                    picked = safe_picker_date(to_picker.value, page)
+                    to_picker.value = picked
+
+                    to_date_value["value"] = picked.isoformat()
                     refresh_filter_dialog()
+
 
                 from_picker.on_change = on_from_change
                 to_picker.on_change = on_to_change
@@ -711,7 +822,8 @@ def accounts_view(page: ft.Page):
                     ],
                 )
 
-                page.overlay.append(member_dialog)
+                if member_dialog not in page.overlay:
+                    page.overlay.append(member_dialog)
 
                 def open_member_dialog(e=None):
                     member_search.value = ""
@@ -895,7 +1007,8 @@ def accounts_view(page: ft.Page):
                     actions_alignment=ft.MainAxisAlignment.END,
                 )
 
-                page.overlay.append(filter_dialog)
+                if filter_dialog not in page.overlay:
+                    page.overlay.append(filter_dialog)
                 filter_dialog.open = True
                 safe_update()
 
@@ -1027,52 +1140,127 @@ def accounts_view(page: ft.Page):
             message.value = f"Error loading transactions: {ex}"
             safe_update()
 
-    def save_account(e):
-        name = (account_name.value or "").strip()
+    save_account_state = {"saving": False}
 
-        if not name:
-            message.value = "Account name is required."
-            message.color = "#DC2626"
-            safe_update()
+    save_account_btn = ft.ElevatedButton(
+        "Save Account",
+        icon=ft.Icons.SAVE_OUTLINED,
+        on_click=None,
+        bgcolor="#2563EB",
+        color="#FFFFFF",
+    )
+
+    async def save_account(e):
+        if save_account_state["saving"]:
             return
 
-        try:
-            balance = float(initial_balance.value or 0)
-        except ValueError:
-            message.value = "Initial balance must be a number."
-            message.color = "#DC2626"
-            safe_update()
-            return
+        save_account_state["saving"] = True
+
+        save_account_btn.disabled = True
+        save_account_btn.on_click = None
+
+        account_type.disabled = True
+        account_name.disabled = True
+        initial_balance.disabled = True
+        is_default.disabled = True
+
+        message.value = "Saving..."
+        message.color = "#64748B"
+        page.update()
 
         try:
+            name = (account_name.value or "").strip()
+
+            if not name:
+                message.value = "Account name is required."
+                message.color = "#DC2626"
+                return
+
+
+            try:
+                initial_balance.value = normalize_amount_text(
+                    initial_balance.value,
+                    allow_negative=True,
+                )
+                balance = parse_amount(
+                    initial_balance.value,
+                    allow_negative=True,
+                )
+            except ValueError:
+                message.value = "Initial balance must be a valid number."
+                message.color = "#DC2626"
+                return
+
+
+            print("ACCOUNT SAVE START")
+
             if editing_account_id["value"]:
-                update_account(
-                    account_id=editing_account_id["value"],
-                    account_type=account_type.value,
-                    account_name=name,
-                    initial_balance=balance,
-                    is_default=bool(is_default.value),
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        update_account,
+                        editing_account_id["value"],
+                        account_type.value,
+                        name,
+                        balance,
+                        bool(is_default.value),
+                    ),
+                    timeout=12,
                 )
                 message.value = "Account updated."
             else:
-                create_account(
-                    account_type=account_type.value,
-                    account_name=name,
-                    initial_balance=balance,
-                    is_default=bool(is_default.value),
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        create_account,
+                        account_type.value,
+                        name,
+                        balance,
+                        bool(is_default.value),
+                    ),
+                    timeout=12,
                 )
                 message.value = "Account created."
 
+            print("ACCOUNT SAVE DB DONE")
+
             message.color = "#16A34A"
+
             reset_form()
             form_card.visible = False
-            load_accounts()
+
+            try:
+                account_dialog.open = False
+            except Exception:
+                pass
+
+            await asyncio.to_thread(load_accounts)
+
+            print("ACCOUNT SAVE UI DONE")
+
+        except asyncio.TimeoutError:
+            message.value = "Save timeout. Please check database connection."
+            message.color = "#DC2626"
+            print("ACCOUNT SAVE TIMEOUT")
 
         except Exception as ex:
             message.value = f"Save error: {ex}"
             message.color = "#DC2626"
+            print("ACCOUNT SAVE ERROR:", ex)
 
-        safe_update()
+        finally:
+            save_account_state["saving"] = False
+
+            save_account_btn.disabled = False
+            save_account_btn.on_click = save_account
+
+            account_type.disabled = False
+            account_name.disabled = False
+            initial_balance.disabled = False
+            is_default.disabled = False
+
+            page.update()
+
+
+    save_account_btn.on_click = save_account
 
     def cancel_edit(e):
         hide_form()
@@ -1099,9 +1287,16 @@ def accounts_view(page: ft.Page):
         content=ft.Icon(ft.Icons.ADD, color="#2563EB", size=24),
     )
 
+    def mobile_dialog_width():
+        return min((page.width or 390) * 0.92, 420)
+
+
+    def mobile_dialog_height():
+        return min((page.height or 800) * 0.78, 560)
+
     form_card = ft.Container(
         visible=False,
-        padding=18,
+        padding=16,
         border_radius=24,
         bgcolor="#FFFFFF",
         border=ft.border.all(1, "#E2E8F0"),
@@ -1111,8 +1306,8 @@ def accounts_view(page: ft.Page):
             color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
             offset=ft.Offset(0, 8),
         ),
-        content=ft.Column(
-            [
+        content=ft.ListView(
+            controls=[
                 ft.Row(
                     [
                         form_icon,
@@ -1133,51 +1328,90 @@ def accounts_view(page: ft.Page):
                     spacing=12,
                 ),
                 ft.Divider(height=16, color="#E2E8F0"),
-                ft.Row(
-                    [
-                        account_type,
-                        ft.Container(
-                            width=48,
-                            height=48,
-                            border_radius=14,
-                            bgcolor="#F1F5F9",
-                            alignment=ft.Alignment.CENTER,
-                            content=ft.IconButton(
-                                icon=ft.Icons.SYNC,
-                                tooltip="Use type as name",
-                                on_click=sync_account_name,
-                            ),
-                        ),
-                    ],
-                    spacing=8,
+
+                account_type,
+
+                ft.Container(
+                    height=48,
+                    border_radius=14,
+                    bgcolor="#F1F5F9",
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.SYNC, size=18, color="#475569"),
+                            ft.Text("Use type as name", size=12, color="#475569"),
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=6,
+                    ),
+                    on_click=sync_account_name,
                 ),
+
                 account_name,
                 initial_balance,
                 is_default,
+
                 ft.Row(
                     [
-                        ft.ElevatedButton(
-                            "Save Account",
-                            icon=ft.Icons.SAVE_OUTLINED,
-                            on_click=save_account,
-                            bgcolor="#2563EB",
-                            color="#FFFFFF",
-                        ),
+                        save_account_btn,
                         ft.TextButton(
                             "Cancel",
                             on_click=cancel_edit,
                         ),
                     ],
                     spacing=10,
+                    wrap=True,
                 ),
+
                 message,
             ],
             spacing=10,
+            padding=0,
+            auto_scroll=False,
         ),
     )
 
+    account_dialog = ft.AlertDialog(
+        modal=True,
+        title=None,
+        content=ft.Container(
+            width=mobile_dialog_width(),
+            height=mobile_dialog_height(),
+            padding=0,
+            content=form_card,
+        ),
+        inset_padding=10,
+        actions=[],
+    )
+
+
+    if account_dialog not in page.overlay:
+        page.overlay.append(account_dialog)
+
     def load_accounts():
         accounts_column.controls.clear()
+
+        accounts_column.controls.append(header_card)
+        accounts_column.controls.append(top_actions)
+
+        accounts_column.controls.append(
+            ft.Row(
+                [
+                    ft.Text(
+                        "Your Accounts",
+                        size=17,
+                        weight=ft.FontWeight.W_700,
+                        color="#0F172A",
+                    ),
+                    ft.Text(
+                        "Tap list icon for statement",
+                        size=11,
+                        color="#64748B",
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            )
+        )
 
         try:
             accounts = get_accounts()
@@ -1186,7 +1420,7 @@ def accounts_view(page: ft.Page):
                 ft.Text(f"Error loading accounts: {ex}", color="#DC2626")
             )
             return
-
+        
         try:
             balances = get_account_balances()
         except Exception:
@@ -1276,11 +1510,19 @@ def accounts_view(page: ft.Page):
                 initial_balance.value = str(account.get("initial_balance") or 0)
                 is_default.value = bool(account.get("is_default"))
                 message.value = ""
+
                 form_title.value = "Edit Account"
                 form_subtitle.value = "Update account details and default status."
                 form_icon.bgcolor = "#FEF3C7"
                 form_icon.content = ft.Icon(ft.Icons.EDIT_OUTLINED, color="#D97706", size=24)
+
                 form_card.visible = True
+
+                account_dialog.content.width = mobile_dialog_width()
+                account_dialog.content.height = mobile_dialog_height()                
+                
+                account_dialog.open = True
+
                 safe_update()
 
             def delete_handler(e, account=acc):
@@ -1291,6 +1533,7 @@ def accounts_view(page: ft.Page):
                         delete_account(account.get("id"))
                         reset_form()
                         form_card.visible = False
+                        account_dialog.open = False
                         load_accounts()
                     except Exception as ex:
                         message.value = f"Delete error: {ex}"
@@ -1482,6 +1725,7 @@ def accounts_view(page: ft.Page):
                 )
             )
 
+
     total_balance_text = ft.Text(
         "0.00",
         size=22,
@@ -1609,64 +1853,76 @@ def accounts_view(page: ft.Page):
             open_account_transactions(ctx["account"], ctx["balance"])
 
     def go_back(e=None):
-        page.data["sabtehazine_changed"] = True
-        page.data["sabtehazine_loaded"] = False
+        page.data = page.data or {}
+
+        page.data["sabtehazine_changed"] = False
+        page.data["sabtehazine_loaded"] = True
+
         page.app_go("sabtehazine")
 
+        fn = page.data.get("sabtehazine_request_summary_refresh")
+        if callable(fn):
+            fn()
+        else:
+            print("SUMMARY REFRESH FUNCTION NOT FOUND")
+
+    accounts_body = ft.Container(
+        expand=True,
+        bgcolor="#F8FAFC",
+        content=accounts_column,
+    )
+
+    if page.platform == ft.PagePlatform.ANDROID:
+        accounts_body = ft.SafeArea(
+            expand=True,
+            avoid_intrusions_top=False,
+            avoid_intrusions_left=False,
+            avoid_intrusions_right=False,
+            avoid_intrusions_bottom=True,
+            content=ft.Container(
+                expand=True,
+                bgcolor="#F8FAFC",
+                content=accounts_column,
+            ),
+        )
+                
     return ft.View(
         route="/accounts",
         bgcolor="#F8FAFC",
-        controls=[
-            ft.AppBar(
-                bgcolor="#F8FAFC",
-                elevation=0,
-                toolbar_height=44,  # 👈 ارتفاع کمتر
-                title_spacing=0,
-                title=ft.Text(
-                    "Accounts",
-                    size=16,  # 👈 متن کوچکتر
-                    color="#0F172A",
-                    weight=ft.FontWeight.W_700,
-                ),
-                leading=ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
+        padding=0,
+        spacing=0,
+        appbar=ft.AppBar(
+            bgcolor="#F8FAFC",
+            elevation=0,
+            toolbar_height=56,
+            leading_width=64,
+            title_spacing=0,
+            center_title=False,
+            title=ft.Text(
+                "Accounts",
+                size=17,
+                color="#0F172A",
+                weight=ft.FontWeight.W_700,
+            ),
+            leading=ft.Container(
+                width=56,
+                height=56,
+                alignment=ft.Alignment.CENTER,
+                content=ft.IconButton(
+                    icon=ft.Icons.ARROW_BACK_ROUNDED,
                     icon_color="#0F172A",
-                    icon_size=18,  # 👈 آیکون کوچکتر
-                    width=36,
-                    height=36,
+                    icon_size=30,
+                    width=56,
+                    height=56,
+                    style=ft.ButtonStyle(
+                        padding=0,
+                    ),
                     on_click=go_back,
                 ),
             ),
-            ft.Container(
-                padding=ft.padding.only(top=4, left=16, right=16, bottom=10),
-                expand=True,
-                content=ft.Column(
-                    [
-                        header_card,
-                        top_actions,
-                        form_card,
-                        ft.Row(
-                            [
-                                ft.Text(
-                                    "Your Accounts",
-                                    size=17,
-                                    weight=ft.FontWeight.W_700,
-                                    color="#0F172A",
-                                ),
-                                ft.Text(
-                                    "Tap list icon for statement",
-                                    size=11,
-                                    color="#64748B",
-                                ),
-                            ],
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        ),
-                        accounts_column,
-                    ],
-                    spacing=14,
-                    expand=True,
-                    scroll=ft.ScrollMode.AUTO,
-                ),
-            ),
+        ),
+        controls=[
+            accounts_body
         ],
     )
+
